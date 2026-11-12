@@ -64,3 +64,9 @@ Paid endpoints require Sites-injected visitor identity and same-origin JSON requ
 The Python shared server remains a separate local demo using SQLite and optional Gemini; it does not use the hosted Worker secret.
 
 Build before running Worker tests: `npm run build && npm test`. Worker and OpenAI tests mock provider responses and do not spend API credits.
+
+## Manual OpenAI key entry
+
+The private site owner can enter a manually issued key at `/settings`. The owner must explicitly consent before saving. The endpoint accepts only same-origin authenticated owner requests and never returns stored keys. Keys are encrypted with AES-GCM and stored in the site's R2 binding `SECRETS_BUCKET`; the encryption secret lives in the separate Sites secret `KEY_ENCRYPTION_SECRET`. `SITE_OWNER_ID` restricts writes to the selected site owner. Never replace the encryption secret while saved keys exist unless intentionally rotating and re-entering the API key. `OPENAI_API_KEY`, if set as a Sites environment secret, takes priority over a manually stored key.
+
+The settings page does not store keys in browser storage or send them to chat. Connection verification is a separate explicit button because it makes a small billable API request. A successful save confirms storage, not that the key has credit or model access.

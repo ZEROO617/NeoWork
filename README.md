@@ -16,11 +16,11 @@ The first run seeds example conversations. Data lives in `server/neowork.sqlite3
 
 ## Optional Gemini
 
-Set `GEMINI_API_KEY` in the server process environment, then run the server. Do not place secrets in browser code. The server calls Gemini 2.5 Flash for natural-language questions, restricts context to the selected room, validates cited message IDs, and stores query history. Without a key or on API errors, the app uses a conservative local rule-based search. Summary and task extraction currently use deterministic rules in all modes; they are not LLM summaries.
+Set `GEMINI_API_KEY` in the server process environment, then run the server. Do not place secrets in browser code. The server calls Gemini 2.5 Flash for natural-language questions, restricts context to the selected room, validates cited message IDs, and stores query history. Without a key or on API errors, the app uses a conservative local rule-based search. The local Python mode uses deterministic summary/task extraction. The hosted Worker additionally supports OpenAI summaries as described below.
 
-## Hosted browser demo
+## Hosted browser storage
 
-`npm run build` creates dependency-free static output in `dist/`. The hosted Sites version is a **browser-local demo**: messages and rooms are stored in localStorage, and no AI API is called. It does not synchronize between devices. The UI explicitly distinguishes this mode from a shared server connection. Example team members are sample profiles, not online presence indicators.
+`npm run build` creates a dependency-free Cloudflare Worker in `dist/server/index.js` with embedded frontend assets. Messages remain in localStorage and do not synchronize across devices. AI uses local rules until the server-side OpenAI secret is configured. See the OpenAI section below.
 
 ## Features
 
@@ -51,4 +51,16 @@ npm run build
 
 ## Limits
 
-The hosted static demo is not a multiuser server. Polling is used instead of WebSockets. Name entry is not secure authentication. Task extraction is conservative and limited to common Korean assignment/completion phrases; arbitrary natural language needs Gemini and further evaluation. Gemini is used for search questions only. No files, notifications, organization administration, or vector database are included, matching the PRD exclusions.
+The hosted browser-storage version is not a multiuser chat server. Polling is used instead of WebSockets. Name entry is not secure authentication. Task extraction is conservative and limited to common Korean assignment/completion phrases; arbitrary natural language needs Gemini and further evaluation. Gemini is used for search questions only. No files, notifications, organization administration, or vector database are included, matching the PRD exclusions.
+
+## OpenAI hosted server (new)
+
+The Sites deployment now builds a Cloudflare Worker with the frontend embedded. The Worker serves `/api/config`, `/api/summary`, and `/api/ai`. Set `OPENAI_API_KEY` as a Sites **secret** through the approved OpenAI Developers key setup flow. `OPENAI_MODEL` is optional (default `gpt-4.1-mini`). No key is stored in source, build output, or browser storage.
+
+Until a key is configured and a new environment revision is deployed, the app continues its explicit rule-based mode. With a key, opening stale conversation details or pressing the refresh icon generates a concise OpenAI summary; questions use OpenAI answers with cited messages. Messages themselves remain in browser localStorage on the hosted version. Only the selected room's last 80 messages are sent per request; OpenAI response storage is disabled with `store: false` (this does not override provider retention policies). API calls have separate usage costs.
+
+Paid endpoints require Sites-injected visitor identity and same-origin JSON requests. Context sizes, message counts, and output tokens are bounded. Burst limiting is per Worker isolate and is not a global spending cap; configure project budgets separately. Unsupported or failed AI results fall back to clearly labeled local rules. Source IDs are validated, uncited claims are removed, and explicit completion evidence is checked.
+
+The Python shared server remains a separate local demo using SQLite and optional Gemini; it does not use the hosted Worker secret.
+
+Build before running Worker tests: `npm run build && npm test`. Worker and OpenAI tests mock provider responses and do not spend API credits.

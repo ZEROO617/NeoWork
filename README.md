@@ -10,7 +10,7 @@ Requires Python 3.10+; no dependencies or paid services required.
 python3 server/app.py
 ```
 
-Open http://localhost:3000. Other users on the same reachable network can open the server's address on port 3000. Enter different names with the bottom-left profile. Messages and rooms are persisted in SQLite; clients refresh shared data every two seconds. This is lightweight name-based access, not verified account authentication. Use a trusted network for the class demo.
+Open http://localhost:3000. Other users on the same reachable network can open the server's address on port 3000. Enter different names with the top-right name button. Messages and rooms are persisted in SQLite; clients refresh shared data every two seconds. This is lightweight name-based access, not verified account authentication. Use a trusted network for the class demo.
 
 The first run seeds example conversations. Data lives in `server/neowork.sqlite3` (ignored by Git). Set `NEOWORK_DB` to another writable path for isolated demos. Deleting the database resets the demo; back it up first if it contains wanted messages.
 
@@ -24,14 +24,17 @@ Set `GEMINI_API_KEY` in the server process environment, then run the server. Do 
 
 ## Features
 
-- Name entry, room creation and switching
+- Name entry and a single focused project chat
 - Shared messages with author/time, persistent SQLite, two-second polling on local server
 - Browser-only fallback with localStorage
 - Summary with core discussion, explicit decisions, remaining work
 - Natural-language questions with source-message navigation
-- Rule-based task extraction, assignee/deadline/status, personal task filter
+- Rule-based task extraction with assignee, deadline, and status
 - Three states: 완료 / 진행 중 / 확인 불가; no completion without explicit evidence
-- Saved messages and keyword search
+- One question search field with cited answers
+- Right-aligned blue bubbles for the current user; left-aligned gray bubbles for other participants
+- White and blue iOS Messages / Skype styling
+- A single summary, decisions, and tasks panel
 - Keyboard composer, accessible forms, responsive layout
 
 ## Structure

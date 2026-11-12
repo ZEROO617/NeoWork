@@ -1,0 +1,8 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {status,extractTasks,search,summarize} from '../public/analysis.js';import {messages} from '../public/data.js';
+const ms=messages.filter(m=>m.room==='project');
+test('never infers completion from plans or explicit negation',()=>{for(const text of ['완료 예정입니다','아직 완료하지 않았어요','완료되면 공유하겠습니다','완료 안 됐어요','미완료입니다'])assert.notEqual(status(text),'완료');assert.equal(status('디자인 완료했어요!'),'완료')});
+test('merges completion evidence with original assignment',()=>{const tasks=extractTasks(ms);const design=tasks.find(t=>t.name==='이서연');assert.equal(design.status,'완료');assert.deepEqual(design.sources,['m3','m6']);assert.equal(tasks.find(t=>t.name==='박준호').status,'진행 중')});
+test('personal task query only returns current user assignments',()=>{const r=search(ms,'내가 해야 할 업무가 있니?','김민지');assert.ok(r.tasks.length);assert.ok(r.tasks.every(t=>t.name==='김민지'));assert.equal(search(ms,'내가 해야 할 업무가 있니?','없는사람').tasks.length,0)});
+test('completion answers cite explicit source messages',()=>{const r=search(ms,'이서연의 업무는 완료됐니?','김민지');assert.equal(r.tasks[0].status,'완료');assert.ok(r.sources.includes('m6'));assert.ok(r.sources.every(id=>ms.some(m=>m.id===id)))});
+test('unknown topics and missing dates return insufficient evidence',()=>{assert.match(search(ms,'우주선 발사 일정','김민지').text,/확인 불가/);assert.match(search(ms,'어제 회의에서 결정된 내용이 뭐야?','김민지').text,/확인 불가/)});
+test('summary separates explicit decisions from open work',()=>{const s=summarize(ms);assert.ok(s.decisions.some(m=>m.id==='m8'));assert.ok(s.issues.every(t=>t.status!=='완료'))});

@@ -1,0 +1,6 @@
+.env
+.env.*
+!.env.example
+server/*.sqlite3*
+__pycache__/
+*.tar.gz

@@ -70,3 +70,7 @@ Build before running Worker tests: `npm run build && npm test`. Worker and OpenA
 The private site owner can enter a manually issued key at `/settings`. The owner must explicitly consent before saving. The endpoint accepts only same-origin authenticated owner requests and never returns stored keys. Keys are encrypted with AES-GCM and stored in the site's R2 binding `SECRETS_BUCKET`; the encryption secret lives in the separate Sites secret `KEY_ENCRYPTION_SECRET`. `SITE_OWNER_ID` restricts writes to the selected site owner. Never replace the encryption secret while saved keys exist unless intentionally rotating and re-entering the API key. `OPENAI_API_KEY`, if set as a Sites environment secret, takes priority over a manually stored key.
 
 The settings page does not store keys in browser storage or send them to chat. Connection verification is a separate explicit button because it makes a small billable API request. A successful save confirms storage, not that the key has credit or model access.
+
+## Right-side panels
+
+The right-hand rail has separate `대화 정리` (summary, decisions, tasks) and `AI 검색` (question input, answers, evidence) controls. Selecting a rail button opens its view; selecting the active button closes it. The close button and Escape also collapse the panel. Switching views keeps both views mounted, preserving the query draft, answer, summary, and independent scroll positions. The mobile panel opens beside the persistent rail and closes when following a source into the conversation.

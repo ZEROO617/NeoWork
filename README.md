@@ -57,9 +57,9 @@ The hosted browser-storage version is not a multiuser chat server. Polling is us
 
 The Sites deployment now builds a Cloudflare Worker with the frontend embedded. The Worker serves `/api/config`, `/api/summary`, and `/api/ai`. Set `OPENAI_API_KEY` as a Sites **secret** through the approved OpenAI Developers key setup flow. `OPENAI_MODEL` is optional (default `gpt-4.1-mini`). No key is stored in source, build output, or browser storage.
 
-Until a key is configured and a new environment revision is deployed, the app continues its explicit rule-based mode. With a key, opening stale conversation details or pressing the refresh icon generates a concise OpenAI summary; questions use OpenAI answers with cited messages. Messages themselves remain in browser localStorage on the hosted version. Only the selected room's last 80 messages are sent per request; OpenAI response storage is disabled with `store: false` (this does not override provider retention policies). API calls have separate usage costs.
+Until a key is configured and a new environment revision is deployed, the app continues its explicit rule-based mode. With a key, only the explicit conversation refresh button generates or updates the conversation document; questions use OpenAI answers with cited messages. Opening the app, switching panels, and receiving messages never generate summaries automatically. Messages themselves remain in browser localStorage on the hosted version. Only the selected room's last 80 messages are sent per request; OpenAI response storage is disabled with `store: false` (this does not override provider retention policies). API calls have separate usage costs.
 
-Paid endpoints require Sites-injected visitor identity and same-origin JSON requests. Context sizes, message counts, and output tokens are bounded. Burst limiting is per Worker isolate and is not a global spending cap; configure project budgets separately. Unsupported or failed AI results fall back to clearly labeled local rules. Source IDs are validated, uncited claims are removed, and explicit completion evidence is checked.
+Paid endpoints require Sites-injected visitor identity and same-origin JSON requests. Context sizes, message counts, and output tokens are bounded. Burst limiting is per Worker isolate and is not a global spending cap; configure project budgets separately. Search failures use clearly labeled conservative local results. Document refresh failures preserve the previous document and all edits. Source IDs are validated, uncited claims are removed, and explicit completion evidence is checked.
 
 The Python shared server remains a separate local demo using SQLite and optional Gemini; it does not use the hosted Worker secret.
 
@@ -74,3 +74,16 @@ The settings page does not store keys in browser storage or send them to chat. C
 ## Right-side panels
 
 The right-hand rail has separate `대화 정리` (summary, decisions, tasks) and `AI 검색` (question input, answers, evidence) controls. Selecting a rail button opens its view; selecting the active button closes it. The close button and Escape also collapse the panel. Switching views keeps both views mounted, preserving the query draft, answer, summary, and independent scroll positions. The mobile panel opens beside the persistent rail and closes when following a source into the conversation.
+
+
+## Persistent conversation document
+
+The `대화 정리` panel keeps its last saved result until the owner clicks `정리 생성` / `최신 대화 반영`. Pending chat is indicated without an API request. No-op refreshes do not call OpenAI. Document records are stored per room in browser localStorage (`nw-documents-v1`), alongside the existing browser-only chat records; this does not introduce cross-device synchronization.
+
+Each summary, decision, and task can be added, edited, or deleted through a save/cancel form. Tasks expose title, assignee, deadline, and the three original status values. User-edited notes are labeled and never modify the original chat. Subsequent explicit chat can supersede a manual edit, but older pending messages cannot silently undo a correction or restore a deleted item. Deleted-item records are retained for this purpose.
+
+Decision cancellation removes the decision from the active list and archives it in the collapsed history with its reason and source messages. Cancellation does not imply the opposite decision. Replacement decisions keep stable item IDs and archive the previous version.
+
+`POST /api/summary` remains compatible with the previous full-summary request. New callers send `mode: update`, a previous document, at most 80 new messages, and their chronological offset. The response contains validated item operations with stable IDs, actions, and message citations. The browser processes all pending messages in byte-bounded batches, stages all changes in memory, then saves only after every batch succeeds. Messages arriving during refresh remain pending. Rate-limited batches wait and retry at most twice. Oversized or failed updates leave saved records untouched.
+
+`POST /api/ai` accepts the current document as additional context and returns separate `manualSources` IDs for manually entered notes. User edits are labeled independently from chat evidence. Only later explicit messages override those notes. Summary helpers reside in `public/document.js`; incremental API validation and instructions reside in `worker/updates.js`. The model and key handling are unchanged.

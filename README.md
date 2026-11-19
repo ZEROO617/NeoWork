@@ -87,3 +87,11 @@ Decision cancellation removes the decision from the active list and archives it 
 `POST /api/summary` remains compatible with the previous full-summary request. New callers send `mode: update`, a previous document, at most 80 new messages, and their chronological offset. The response contains validated item operations with stable IDs, actions, and message citations. The browser processes all pending messages in byte-bounded batches, stages all changes in memory, then saves only after every batch succeeds. Messages arriving during refresh remain pending. Rate-limited batches wait and retry at most twice. Oversized or failed updates leave saved records untouched.
 
 `POST /api/ai` accepts the current document as additional context and returns separate `manualSources` IDs for manually entered notes. User edits are labeled independently from chat evidence. Only later explicit messages override those notes. Summary helpers reside in `public/document.js`; incremental API validation and instructions reside in `worker/updates.js`. The model and key handling are unchanged.
+
+## Grouped evidence and task cards
+
+Each summary, decision, task, history record, or search answer shows one evidence button with the deduplicated count instead of a separate link for every message. Manually edited items retain the `기존 근거` label. Evidence IDs are resolved against the original chat and ordered by message time, with original chat order breaking ties; missing references are skipped.
+
+Clicking evidence starts local in-chat navigation above the composer: previous, position/total, next, return, and close. Only the selected message is highlighted. Bounds do not wrap. Return restores the originating panel, scroll position, history expansion when applicable, and item; mobile navigation collapses the panel until return. Incoming chat does not auto-scroll away from evidence. Sending a new message exits navigation. Search references to manually entered notes remain separate from chat citations. Navigation makes no AI calls and changes no persisted data.
+
+Tasks use separate bordered white cards with a full wrapping title, status, labeled assignee/deadline metadata, and a compact evidence/edit footer.

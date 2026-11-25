@@ -94,7 +94,7 @@ Each summary, decision, task, history record, or search answer shows one evidenc
 
 Clicking evidence opens a source dialog with the original author, timestamp, complete message, previous/next controls and a jump-to-chat button. Task metadata appears only when a linked task exists. Jumping starts local in-chat navigation above the composer: previous, position/total, next, return, and close. Only the selected message is highlighted. Bounds do not wrap. Return restores the originating panel, scroll position, history expansion when applicable, and item; mobile navigation collapses the panel until return. Incoming chat does not auto-scroll away from evidence. Sending a new message exits navigation. Search references to manually entered notes remain separate from chat citations. Navigation makes no AI calls and changes no persisted data.
 
-Tasks use separate bordered white cards with a full wrapping title, status, labeled assignee/deadline metadata, and a compact evidence/edit footer.
+The conversation summary uses one large bordered box for all summary notes. Decisions use a two-column grid of square sticky-note cards (three columns when the summary content is at least 580px wide, one below 285px). Cards grow for long content rather than clipping it. Tasks are grouped by assignee, with simple rows below each participant heading; unknown assignees share a `담당 미정` group. Task rows show the full title, status, deadline and evidence/edit controls without repeating the assignee. Grouping changes presentation only: item IDs, saved order, evidence and manual edits remain intact.
 
 ## Figma interface
 

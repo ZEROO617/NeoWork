@@ -9,7 +9,17 @@ export const messages=[
 {id:'m6',room:'project',name:'이서연',text:'채팅 화면 UI 디자인 완료했어요! 사이드바는 편안한 올리브 톤으로, 대화에 집중할 수 있게 구성했습니다. ✨',time:at(35)},
 {id:'m7',room:'project',name:'박준호',text:'디자인 좋네요! 채팅 기능은 지금 구현 중이에요. 메시지 저장까지 연결하고 공유하겠습니다.',time:at(37)},
 {id:'m8',room:'project',name:'김민지',text:'이번 MVP에서는 파일 업로드는 제외하고, 채팅 · 요약 · 검색에 집중하기로 결정했어요. 모두 이 방향으로 진행해 주세요 🙌',time:at(40)},
+{id:'m9',room:'project',name:'김민지',text:'출시 전 팀 검수는 목요일 오후 3시에 진행하기로 결정했어요. 이 시간에 각자 맡은 기능을 함께 확인하겠습니다.',time:at(42)},
+{id:'m10',room:'project',name:'정우진',text:'데모 발표는 금요일 오전 10시에 진행하기로 결정했습니다. 이 시간에 맞춰 발표를 준비하겠습니다.',time:at(44)},
 {id:'g1',room:'general',name:'김민지',text:'우리 팀의 새로운 작업 공간에 오신 걸 환영해요! 자유롭게 이야기 나눠 주세요. ☕',time:at(0)},
 {id:'d1',room:'design',name:'이서연',text:'디자인 원칙은 단순함과 편안함으로 정했어요. 올리브 컬러를 포인트로 사용합니다.',time:at(10)},
 {id:'v1',room:'dev',name:'박준호',text:'개발 관련 질문이나 진행 상황은 이 채널에서 공유해 주세요!',time:at(10)}];
 export const people=[{name:'김민지',role:'기획 · AI 개발',color:'olive'},{name:'박준호',role:'백엔드 개발',color:'blue'},{name:'이서연',role:'UI/UX 디자인',color:'orange'},{name:'정우진',role:'QA · 발표',color:'purple'}];
+
+// Upgrade only an untouched earlier sample, never a user's edited conversation.
+export function upgradeSampleMessages(stored){
+ const additions=messages.filter(m=>m.id==='m9'||m.id==='m10'),original=messages.filter(m=>!additions.includes(m));
+ if(!Array.isArray(stored)||stored.length!==original.length||!original.every(seed=>stored.some(m=>m.id===seed.id&&m.room===seed.room&&m.name===seed.name&&m.text===seed.text)))return stored;
+ const last=Date.parse(stored.find(m=>m.id==='m8').time);if(!Number.isFinite(last))return stored;
+ return [...stored,...additions.map((m,index)=>({...m,time:new Date(last+(index+1)*120000).toISOString()}))];
+}

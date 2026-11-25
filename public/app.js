@@ -1,4 +1,4 @@
-import {rooms as initialRooms,messages as initialMessages} from './data.js';
+import {rooms as initialRooms,messages as initialMessages,upgradeSampleMessages} from './data.js';
 import {search} from './analysis.js';
 import {evidenceIds,startEvidenceState,moveEvidenceState,reconcileEvidenceState} from './evidence.js';
 import {emptyDocument,validDocument,pendingMessages,isDirty,manualChange,apiDocument,stageRefresh,sections} from './document.js';
@@ -7,6 +7,7 @@ const I=(name,size=20)=>`<svg width="${size}" height="${size}" viewBox="0 0 24 2
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function saved(key,fallback){try{return JSON.parse(localStorage.getItem(key))??fallback}catch{return fallback}}
 let rooms=saved('nw-rooms',initialRooms),messages=saved('nw-messages',initialMessages),user=localStorage.getItem('nw-user')||'',room='project',answer=null,server=false,busy=false,panelOpen=saved('nw-panel-open',!matchMedia('(max-width: 760px)').matches);
+const upgradedSample=upgradeSampleMessages(messages);if(upgradedSample!==messages){messages=upgradedSample;try{localStorage.setItem('nw-messages',JSON.stringify(messages))}catch{}}
 let activePanel=saved('nw-side-panel','summary');if(!['summary','search'].includes(activePanel))activePanel='summary';
 const app=document.querySelector('#app'),dialog=document.querySelector('#dialog');
 let evidenceNavigation=null;const evidenceGroups=new Map();

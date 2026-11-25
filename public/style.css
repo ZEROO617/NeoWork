@@ -25,7 +25,7 @@
 /* Conversation overview: one summary box, sticky-note decisions and tasks by person. */
 .summary-view .details-scroll{container-type:inline-size;container-name:conversation-summary}
 .summary-view .detail-section{padding-top:24px}
-.summary-overview{min-height:144px;padding:20px;border:1px solid var(--line);border-radius:9px;background:#fff}
+.summary-overview{min-height:144px;padding:20px;border:1px solid #b5c4d3;border-radius:9px;background:#dce5ee}
 .summary-overview .summary-list{gap:16px}
 .summary-overview .summary-list li{border:0;border-radius:0;padding:0;background:none}
 .summary-overview .summary-list li+li{border-top:1px solid var(--line);padding-top:16px}
@@ -53,3 +53,8 @@
 @container conversation-summary (max-width:285px){.decision-list{grid-template-columns:minmax(0,1fr)}.decision-list li{aspect-ratio:auto;min-height:160px}}
 
 .summary-overview .summary-list li:before{display:none}.summary-overview .summary-list li>p{color:#405566}.summary-overview .summary-list li{margin:0}.decision-list li:before{display:none}.decision-list li{border:1px solid #c9e2f2}.decision-list li>p{color:#405566}.participant-heading h4{color:#405566}.participant-heading h4 span,.participant-heading>span{color:#8796a3}.participant-tasks .task-cards>.task-card{border:0;border-bottom:1px solid var(--line);border-radius:0;background:none;padding:16px 0}.participant-tasks .task-cards>.task-card:last-child{border-bottom:0}.participant-tasks .task-heading strong{color:#405566}
+
+/* Give each task its own visible boundary within the participant group. */
+.participant-tasks .task-cards{display:grid;gap:12px;padding-top:12px}
+.participant-tasks .task-cards>.task-card,.participant-tasks .task-cards>.task-card:last-child{padding:16px;border:1px solid #c3d2df;border-left:3px solid #008cdb;border-radius:8px;background:#fff;box-shadow:0 2px 5px #294b6b0a}
+.participant-tasks .task-heading strong{font-weight:600}

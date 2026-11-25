@@ -5,6 +5,11 @@ const assets={};for(const name of (await readdir('public')).sort()){const ext=na
 const updates=(await readFile('worker/updates.js','utf8')).replace(/export /g,'');
 const ai=(await readFile('worker/ai.js','utf8')).replace("import {updateSchema,validatePrevious,cleanOperations,updateInstructions} from './updates.js';",updates).replace(/export /g,'');
 const secrets=(await readFile('worker/secrets.js','utf8')).replace(/export /g,'');
-const worker=(await readFile('worker/index.js','utf8')).replace("import {analyze,validateContext} from './ai.js';",ai).replace("import {readKey,writeKey} from './secrets.js';",secrets).replace('__NEOWORK_ASSETS__',JSON.stringify(assets));
+const docSource=(await readFile('public/document.js','utf8')).replace(/export /g,'');
+const documentModel='const documentModel=(()=>{'+docSource+';return {emptyDocument,manualChange,apiDocument,stageRefresh,isDirty}})();';
+const seed=await import('../public/data.js');
+const roomSource=(await readFile('worker/rooms.js','utf8')).replace("import {analyze} from './ai.js';",'').replace("import {readKey} from './secrets.js';",'').replace("import {emptyDocument,manualChange,apiDocument,stageRefresh,isDirty} from '../public/document.js';",'const {emptyDocument,manualChange,apiDocument,stageRefresh,isDirty}=documentModel;').replace("import {messages as sampleMessages} from '../public/data.js';",'const sampleMessages='+JSON.stringify(seed.messages)+';').replace(/export /g,'');
+const roomsModule='const {handleRooms}=(()=>{'+roomSource+';return {handleRooms}})();';
+const worker=(await readFile('worker/index.js','utf8')).replace("import {handleRooms} from './rooms.js';",documentModel+roomsModule).replace("import {analyze,validateContext} from './ai.js';",ai).replace("import {readKey,writeKey} from './secrets.js';",secrets).replace('__NEOWORK_ASSETS__',JSON.stringify(assets));
 await writeFile('dist/server/index.js',worker);await mkdir('dist/.openai',{recursive:true});await cp('.openai/hosting.json','dist/.openai/hosting.json');
 console.log('Built NeoWork Worker with embedded frontend → dist/server/index.js');

@@ -1,4 +1,5 @@
 {
   "project_id": "appgprj_6af5659255588191ae9e9e09a3a1fbc7",
-  "r2": "SECRETS_BUCKET"
+  "r2": "SECRETS_BUCKET",
+  "d1": "DB"
 }

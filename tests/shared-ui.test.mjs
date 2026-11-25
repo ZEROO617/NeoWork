@@ -1,0 +1,21 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {JSDOM} from 'jsdom';import {Miniflare} from 'miniflare';import {readFile} from 'node:fs/promises';import {randomUUID} from 'node:crypto';
+import worker from '../dist/server/index.js';
+const base='https://neowork.example';
+const modules={};for(const key of ['data','analysis','evidence','document'])modules['./'+key+'.js']=await import('../public/'+key+'.js');
+const code=(await readFile('public/app.js','utf8')).replace(/^import \{(.+?)\} from '(.+?)';$/gm,(_,names,path)=>`const {${names.replace(/ as /g,':')}}=window.__modules[${JSON.stringify(path)}];`);
+const shared=await readFile('public/shared.js','utf8');const until=async f=>{for(let n=0;n<500;n++){if(f())return;await new Promise(r=>setTimeout(r,20))}throw Error('UI wait timed out')};
+test('two browser sessions select rooms, choose names, share chat and edit one shared task',async()=>{
+ const mf=new Miniflare({modules:true,script:'export default {fetch(){return new Response("test")}}',compatibilityDate:'2026-07-01',d1Databases:['DB']});const db=await mf.getD1Database('DB');const windows=[];const errors=[];
+ try{
+ for(const sql of (await readFile('drizzle/0000_modern_sabra.sql','utf8')).split('--> statement-breakpoint').map(s=>s.trim()).filter(Boolean))await db.prepare(sql).run();
+ async function boot(){const dom=new JSDOM('<div id="app"></div><div id="toast"></div><dialog id="dialog"></dialog>',{url:base,runScripts:'outside-only',pretendToBeVisual:true});const w=dom.window;windows.push(w);w.matchMedia=()=>({matches:false});w.setInterval=()=>0;w.crypto.randomUUID=randomUUID;w.TextEncoder=TextEncoder;w.Element.prototype.scrollIntoView=function(){};w.HTMLDialogElement.prototype.showModal=function(){this.open=true};w.HTMLDialogElement.prototype.close=function(){this.open=false};w.addEventListener('error',e=>errors.push(e.error));
+ w.fetch=async(path,opts={})=>{const headers=new Headers(opts.headers);const cookie=dom.cookieJar.getCookieStringSync(base);if(cookie)headers.set('Cookie',cookie);if(opts.method&&opts.method!=='GET')headers.set('Origin',base);const response=await worker.fetch(new Request(new URL(path,base),{...opts,headers}),{DB:db});const set=response.headers.get('set-cookie');if(set)dom.cookieJar.setCookieSync(set,base);return response};
+ w.eval('window.__shared=(()=>{'+shared.replace(/export /g,'')+';return {sharedRequest,lobbyHTML}})()');w.__modules={...modules,'./shared.js':w.__shared};w.eval(code);await until(()=>w.document.querySelectorAll('.room-card').length===2);return {w,$:s=>w.document.querySelector(s)}}
+ const a=await boot(),b=await boot();
+ for(const [actor,nickname] of [[a,'민지'],[b,'준호']]){actor.$('#join-nickname').value=nickname;actor.$('#join-nickname').dispatchEvent(new actor.w.Event('input'));actor.$('[data-room-id="team"]').click();await until(()=>!actor.$('.lobby')&&/참여자 [12]명/.test(actor.$('.conversation-header p').textContent))}
+ a.$('#message').value='두 사람이 함께 보는 대화';a.$('#message-form').dispatchEvent(new a.w.Event('submit',{cancelable:true}));await until(()=>a.$('#message').value==='');await b.w.eval('sync()');assert.match(b.$('#content').textContent,/두 사람이 함께 보는 대화/);assert.ok(a.$('.outgoing'));assert.ok(b.$('.incoming'));assert.equal(a.w.document.cookie.includes('__Host-neowork'),false);
+ a.$('[data-add-section="tasks"]').click();a.$('#item-text').value='시연 준비';a.$('#item-name').value='준호';a.$('#item-due').value='금요일';a.$('#item-status').value='진행 중';a.$('#document-form').dispatchEvent(new a.w.Event('submit',{cancelable:true}));await until(()=>!a.$('#dialog').open);await b.w.eval('sync()');assert.match(b.$('#ai-result').textContent,/시연 준비/);assert.match(b.$('#ai-result').textContent,/담당자준호/);
+ a.$('#message').value='전송하지 않은 초안';await a.w.eval('sync()');assert.equal(a.$('#message').value,'전송하지 않은 초안');a.$('#room-list').click();await until(()=>a.$('.room-card'));assert.equal(a.$('#join-nickname').value,'민지');assert.equal(a.w.localStorage.getItem('nw-messages'),null);assert.deepEqual(errors,[]);
+ }finally{for(const w of windows)w.close();await mf.dispose()}
+});

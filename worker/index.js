@@ -1,3 +1,4 @@
+import {handleRooms} from './rooms.js';
 import {analyze,validateContext} from './ai.js';
 import {readKey,writeKey} from './secrets.js';
 // Replaced with embedded public assets by scripts/build.mjs.
@@ -6,7 +7,8 @@ const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:
 const recent=new Map(); // Best-effort per-isolate burst control; not a billing limit.
 export default {async fetch(request,env){
   const url=new URL(request.url);
-  if(url.pathname==='/api/config'&&request.method==='GET'){try{return json({openai:!!(await readKey(env)),storage:'browser'})}catch{return json({openai:false,storage:'browser'})}}
+  const shared=await handleRooms(request,env);if(shared)return shared;
+  if(url.pathname==='/api/config'&&request.method==='GET'){try{return json({openai:!!(await readKey(env)),storage:env.DB?'shared':'browser'})}catch{return json({openai:false,storage:env.DB?'shared':'browser'})}}
   if(url.pathname==='/api/settings/openai'){
     if(request.method!=='POST')return json({error:'method_not_allowed'},405);
     if(!request.headers.get('oai-authenticated-user-id'))return json({error:'authentication_required'},401);
@@ -29,6 +31,7 @@ export default {async fetch(request,env){
     if(request.method!=='POST')return json({error:'method_not_allowed'},405);
     const identity=request.headers.get('oai-authenticated-user-id');
     if(!identity)return json({error:'authentication_required'},401);
+    if(env.DB&&identity!==env.SITE_OWNER_ID)return json({error:'owner_required'},403);
     if(request.headers.get('Origin')!==url.origin)return json({error:'origin_rejected'},403);
     if(request.headers.get('Content-Type')?.split(';')[0]!=='application/json')return json({error:'json_required'},415);
     let apiKey;try{apiKey=await readKey(env)}catch{return json({error:'key_storage_unavailable',mode:'rules'},503)}

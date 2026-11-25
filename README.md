@@ -1,105 +1,67 @@
-# NeoWork MVP
+# NeoWork
 
-Korean collaboration messenger based on NeoWork PRD v0.1.
+A shared Korean team messenger with room selection, nickname entry, cited AI summaries and natural-language search. The UI retains the white/sky-blue messenger design, right-aligned own messages and independent collapsible summary/search panels.
 
-## Run the shared app
+## Joining and sharing
 
-Requires Python 3.10+; no dependencies or paid services required.
+Open the website, choose a nickname, and enter a room. The lobby includes an empty team room and a separate demo room containing sample discussion, three explicit decisions and task assignments. Anyone with the site URL can join an open room. Nicknames are unique within each room and can differ between rooms. They are display names, not verified identities.
+
+Create a room with `새 채팅방`. Use `초대 링크` inside a room to copy its URL. The invited room appears first in the lobby. `채팅방 목록` returns to room selection. A browser can retain membership in several rooms, while its messages and drafts remain scoped to the selected room.
+
+Messages and conversation documents are stored in Cloudflare D1 and shared across devices. Active clients poll every three seconds, fetching messages after their last cursor in pages of 200. Retried sends use a client UUID and a database uniqueness constraint, preventing duplicate messages. Server-assigned member IDs determine own-message alignment; clients cannot select the author of a message.
+
+Existing browser-local conversations and documents are not uploaded, erased or made public. When earlier local messages exist, `이 브라우저의 이전 대화 보기` opens them separately. New shared rooms start empty; the demo room alone receives sample messages. The previous Python/SQLite server remains in `server/` as a legacy reference and is not used by the hosted service.
+
+## Conversation documents and AI
+
+The summary panel contains one darker blue-gray overview box, separate decision note cards, and assignee-grouped task cards with visible assignee, deadline, status, edit and evidence controls. Completion requires explicit evidence. Grouped evidence opens the original chat with previous/next navigation and return to the originating item. Direct user edits are attributed separately from chat facts.
+
+`최신 대화 반영` is explicit: no background AI calls occur on entry, polling, typing or panel switching. Shared summaries run on the server against stored room messages, not client-supplied context. New messages are processed in bounded batches; failures retain the last saved document. Concurrent summary generation obtains a database lease, and document updates use revision checks. A competing edit receives a conflict instead of overwriting the earlier save. All participants in a room can see the updated document and use manual editing.
+
+Independent decisions are separate records with their own citations. Existing combined AI records can be split during one explicit format refresh. Stable IDs, cancellation history, manual cursors and deletion protections are retained. The provider's ID enum permits only existing/deleted IDs or the empty ID used for new locally assigned UUIDs.
+
+Shared search uses the latest 80 stored messages and the shared document, including cited history and clearly attributed manual notes. Unknown information is not invented. The configured provider is OpenAI Responses API, `gpt-4.1-mini` by default; `OPENAI_MODEL` can override it. Requests use structured output and `store: false`.
+
+## Storage and guest access
+
+`.openai/hosting.json` declares the D1 binding `DB` and the existing encrypted-credential R2 binding `SECRETS_BUCKET`. Schema-only Drizzle migrations are in `drizzle/`; demo seeding is a separate bounded, idempotent server operation. The default rooms are `team` and `demo`.
+
+Guest room sessions use a random token in a Secure, HttpOnly, SameSite=Lax cookie lasting 30 days. Only its SHA-256 hash is stored. Membership checks protect room state and writes. Joining is open to anyone with a nickname, so this is an open-room service, not a confidential invitation-only workspace. The server validates same-origin JSON writes, nickname collisions, message lengths and room boundaries. Nickname identity is not account authentication.
+
+Database-backed rate limits apply to joins, session creation, new rooms, messages, edits and AI requests. AI allows three calls per member per minute and 100 calls across the site per UTC day; current unchanged summaries do not consume a call. These MVP limits are defined in `worker/rooms.js`. Settings writes remain restricted to the site's authenticated owner, even while the chat service is public. Legacy AI endpoints for browser-local records are owner-only when the shared DB is enabled.
+
+The API key remains server-side. `OPENAI_API_KEY` takes priority over the manually stored key. `/settings` encrypts manually entered keys with AES-GCM in R2 using `KEY_ENCRYPTION_SECRET`; `SITE_OWNER_ID` controls owner writes. There is no endpoint to retrieve a stored key. Never replace the encryption secret without intentionally rotating/re-entering the saved key. No key is placed in browser storage, source, request logs, or chat.
+
+## Development
+
+Requires Node.js 22.13 or newer (Node 24 recommended).
 
 ```sh
-python3 server/app.py
+npm ci
+npm run dev
 ```
 
-Open http://localhost:3000. Other users on the same reachable network can open the server's address on port 3000. Enter different names with the top-right name button. Messages and rooms are persisted in SQLite; clients refresh shared data every two seconds. This is lightweight name-based access, not verified account authentication. Use a trusted network for the class demo.
-
-The first run seeds example conversations. Data lives in `server/neowork.sqlite3` (ignored by Git). Set `NEOWORK_DB` to another writable path for isolated demos. Deleting the database resets the demo; back it up first if it contains wanted messages.
-
-## Optional Gemini
-
-Set `GEMINI_API_KEY` in the server process environment, then run the server. Do not place secrets in browser code. The server calls Gemini 2.5 Flash for natural-language questions, restricts context to the selected room, validates cited message IDs, and stores query history. Without a key or on API errors, the app uses a conservative local rule-based search. The local Python mode uses deterministic summary/task extraction. The hosted Worker additionally supports OpenAI summaries as described below.
-
-## Hosted browser storage
-
-`npm run build` creates a dependency-free Cloudflare Worker in `dist/server/index.js` with embedded frontend assets. Messages remain in localStorage and do not synchronize across devices. AI uses local rules until the server-side OpenAI secret is configured. See the OpenAI section below.
-
-## Features
-
-- Name entry and a single focused project chat
-- Shared messages with author/time, persistent SQLite, two-second polling on local server
-- Browser-only fallback with localStorage
-- Summary with core discussion, explicit decisions, remaining work
-- Natural-language questions with source-message navigation
-- Rule-based task extraction with assignee, deadline, and status
-- Three states: 완료 / 진행 중 / 확인 불가; no completion without explicit evidence
-- One question search field with cited answers
-- Right-aligned blue bubbles for the current user; left-aligned gray bubbles for other participants
-- White and blue iOS Messages / Skype styling
-- A single summary, decisions, and tasks panel
-- Keyboard composer, accessible forms, responsive layout
-
-## Structure
-
-`public/app.js` handles UI and interactions; `data.js` supplies sample records; `analysis.js` contains conservative analysis logic; `style.css` styles the responsive app. `server/app.py` handles shared persistence and optional Gemini requests. `server/seed.json` is the initial shared dataset. This MVP uses vanilla ES modules and Python/SQLite instead of the PRD's suggested Next.js/Supabase/Vercel stack, so the demo works without third-party credentials.
-
-## Checks
+The development script builds the Worker, starts Miniflare on localhost:4173, and applies pending local migrations once. Local D1/R2 state lives in ignored `.wrangler/` directories and is separate from production. It accepts `--port` and `--host` after `npm run dev --`. Optional local secrets are read from ignored `.env.local` without printing their values. Hosted schema migrations are applied by Sites during publication.
 
 ```sh
-npm test
-python3 -m unittest discover -s tests -p '*_test.py'
+npm run db:generate
 npm run build
+npm test
 ```
 
-## Limits
+Edit schema declarations in `db/schema.ts`, generate and inspect a new migration, and commit the SQL and Drizzle metadata. Applied migrations are immutable. Build output embeds HTML, CSS and JavaScript into `dist/server/index.js`; no frontend bundler is required. Distribution archives contain `.openai/hosting.json`, `dist/`, and `drizzle/` from the pushed source commit.
 
-The hosted browser-storage version is not a multiuser chat server. Polling is used instead of WebSockets. Name entry is not secure authentication. Task extraction is conservative and limited to common Korean assignment/completion phrases; arbitrary natural language needs Gemini and further evaluation. Gemini is used for search questions only. No files, notifications, organization administration, or vector database are included, matching the PRD exclusions.
+Tests use actual D1 behavior through Miniflare, mocked provider responses and separate jsdom cookie jars. They cover room isolation, two-client chat, authoritative sender names, idempotent concurrent sends, nickname collisions, shared edits, conflict detection, summary locking, server-owned AI context, paginated polling and the full lobby → nickname → chat → shared task flow. No real API key is used by automated tests.
 
-## OpenAI hosted server (new)
+## Files
 
-The Sites deployment now builds a Cloudflare Worker with the frontend embedded. The Worker serves `/api/config`, `/api/summary`, and `/api/ai`. Set `OPENAI_API_KEY` as a Sites **secret** through the approved OpenAI Developers key setup flow. `OPENAI_MODEL` is optional (default `gpt-4.1-mini`). No key is stored in source, build output, or browser storage.
+- `public/app.js`: messenger, lobby orchestration, room-scoped state, explicit summary refresh and shared editing.
+- `public/shared.js`: lobby rendering, shared API requests and actionable errors.
+- `public/document.js`: document operations, manual protection and staged refresh.
+- `public/evidence.js`: grouped citation navigation.
+- `worker/rooms.js`: durable room, session, membership, message and document endpoints.
+- `worker/ai.js`, `worker/updates.js`: provider request schema and cited operation validation.
+- `worker/secrets.js`: encrypted server credential storage.
+- `scripts/dev.mjs`, `scripts/build.mjs`: local D1 preview and embedded Worker packaging.
 
-Until a key is configured and a new environment revision is deployed, the app continues its explicit rule-based mode. With a key, only the explicit conversation refresh button generates or updates the conversation document; questions use OpenAI answers with cited messages. Opening the app, switching panels, and receiving messages never generate summaries automatically. Messages themselves remain in browser localStorage on the hosted version. Only the selected room's last 80 messages are sent per request; OpenAI response storage is disabled with `store: false` (this does not override provider retention policies). API calls have separate usage costs.
-
-Paid endpoints require Sites-injected visitor identity and same-origin JSON requests. Context sizes, message counts, and output tokens are bounded. Burst limiting is per Worker isolate and is not a global spending cap; configure project budgets separately. Search failures use clearly labeled conservative local results. Document refresh failures preserve the previous document and all edits. Source IDs are validated, uncited claims are removed, and explicit completion evidence is checked.
-
-The Python shared server remains a separate local demo using SQLite and optional Gemini; it does not use the hosted Worker secret.
-
-Build before running Worker tests: `npm run build && npm test`. Worker and OpenAI tests mock provider responses and do not spend API credits.
-
-## Manual OpenAI key entry
-
-The private site owner can enter a manually issued key at `/settings`. The owner must explicitly consent before saving. The endpoint accepts only same-origin authenticated owner requests and never returns stored keys. Keys are encrypted with AES-GCM and stored in the site's R2 binding `SECRETS_BUCKET`; the encryption secret lives in the separate Sites secret `KEY_ENCRYPTION_SECRET`. `SITE_OWNER_ID` restricts writes to the selected site owner. Never replace the encryption secret while saved keys exist unless intentionally rotating and re-entering the API key. `OPENAI_API_KEY`, if set as a Sites environment secret, takes priority over a manually stored key.
-
-The settings page does not store keys in browser storage or send them to chat. Connection verification is a separate explicit button because it makes a small billable API request. A successful save confirms storage, not that the key has credit or model access.
-
-## Right-side panels
-
-The right-hand rail has separate `대화 정리` (summary, decisions, tasks) and `AI 검색` (question input, answers, evidence) controls. Selecting a rail button opens its view; selecting the active button closes it. The close button and Escape also collapse the panel. Switching views keeps both views mounted, preserving the query draft, answer, summary, and independent scroll positions. The mobile panel opens beside the persistent rail and closes when following a source into the conversation.
-
-
-## Persistent conversation document
-
-The `대화 정리` panel keeps its last saved result until the owner clicks `최신 대화 반영`. Pending chat is indicated without an API request. No-op refreshes do not call OpenAI. Document records are stored per room in browser localStorage (`nw-documents-v1`), alongside the existing browser-only chat records; this does not introduce cross-device synchronization.
-
-Each summary, decision, and task can be added, edited, or deleted through a save/cancel form. Tasks expose title, assignee, deadline, and the three original status values. User-edited notes are labeled and never modify the original chat. Subsequent explicit chat can supersede a manual edit, but older pending messages cannot silently undo a correction or restore a deleted item. Deleted-item records are retained for this purpose.
-
-Decision cancellation removes the decision from the active list and archives it in the collapsed history with its reason and source messages. Cancellation does not imply the opposite decision. Replacement decisions keep stable item IDs and archive the previous version.
-
-`POST /api/summary` remains compatible with the previous full-summary request. New callers send `mode: update`, a previous document, at most 80 new messages, and their chronological offset. The response contains validated item operations with stable IDs, actions, and message citations. The provider schema restricts item IDs to existing active/deleted records or an empty string for new items; new UUIDs are assigned locally, preventing model-invented IDs from breaking initial generation. The browser processes all pending messages in byte-bounded batches, stages all changes in memory, then saves only after every batch succeeds. Messages arriving during refresh remain pending. Rate-limited batches wait and retry at most twice. Oversized or failed updates leave saved records untouched.
-
-`POST /api/ai` accepts the current document as additional context and returns separate `manualSources` IDs for manually entered notes. User edits are labeled independently from chat evidence. Only later explicit messages override those notes. Summary helpers reside in `public/document.js`; incremental API validation and instructions reside in `worker/updates.js`. The model and key handling are unchanged.
-
-## Grouped evidence and task cards
-
-Each summary, decision, task, history record, or search answer shows one evidence button with the deduplicated count instead of a separate link for every message. Manually edited items retain the `기존 근거` label. Evidence IDs are resolved against the original chat and ordered by message time, with original chat order breaking ties; missing references are skipped.
-
-Clicking evidence starts local in-chat navigation above the composer: previous, position/total, next, return, and close. Only the selected message is highlighted. Bounds do not wrap. Return restores the originating panel, scroll position, history expansion when applicable, and item; mobile navigation collapses the panel until return. Incoming chat does not auto-scroll away from evidence. Sending a new message exits navigation. Search references to manually entered notes remain separate from chat citations. Navigation makes no AI calls and changes no persisted data.
-
-The conversation summary uses one large, darker blue-gray bordered box for all summary notes. Decisions use a two-column grid of square sticky-note cards (three columns when the summary content is at least 580px wide, one below 285px). Cards grow for long content rather than clipping it. Tasks are grouped by assignee, with individually bordered cards and spacing below each participant heading; unknown assignees share a `담당 미정` group. Task rows show the full title, status, deadline and evidence/edit controls with the assignee repeated on each card. Grouping changes presentation only: item IDs, saved order, evidence and manual edits remain intact.
-
-## Interface
-
-The main screen uses the earlier white/sky-blue messenger design with right-aligned outgoing messages, a focused project conversation and independent summary/search views selected by the right-hand rail. The conversation summary retains its large shared summary box, two-column decision notes and assignee-grouped task rows. Display changes do not migrate or overwrite local messages or documents. Evidence opens the original in-chat previous/next navigation.
-
-The default project conversation includes three explicit decisions: MVP scope, Thursday team review and Friday demo presentation. Untouched earlier browser samples receive the two added messages once, retaining their existing timestamps. Conversations with added or edited messages are left intact. New local SQLite databases use the same revised seed; existing databases are not overwritten.
-
-AI decisions are kept as separate records per independent choice. Existing AI documents without `decisionFormatVersion: 1` are marked for a one-time decision-format refresh. Only an explicit refresh replays the conversation in bounded batches with the repair flag; the provider is instructed to split combined AI records while retaining one ID and archiving the combined wording. Manual cursors and deletions remain protected. Successful refresh records the format version, so later unchanged refreshes remain no-ops. No background AI calls are introduced.
+The original uploaded PRD supplied product context, not instructions to override the user's requested implementation.

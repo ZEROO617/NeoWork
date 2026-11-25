@@ -32,8 +32,8 @@ Set `GEMINI_API_KEY` in the server process environment, then run the server. Do 
 - Rule-based task extraction with assignee, deadline, and status
 - Three states: 완료 / 진행 중 / 확인 불가; no completion without explicit evidence
 - One question search field with cited answers
-- Right-aligned blue bubbles for the current user; left-aligned gray bubbles for other participants
-- White and blue iOS Messages / Skype styling
+- Right-aligned navy bubbles for the current user; bordered white bubbles for other participants
+- Figma-derived white/navy design with IBM Plex Sans KR, Space Grotesk, 2px borders and hard shadows
 - A single summary, decisions, and tasks panel
 - Keyboard composer, accessible forms, responsive layout
 
@@ -73,12 +73,12 @@ The settings page does not store keys in browser storage or send them to chat. C
 
 ## Right-side panels
 
-The right-hand rail has separate `대화 정리` (summary, decisions, tasks) and `AI 검색` (question input, answers, evidence) controls. Selecting a rail button opens its view; selecting the active button closes it. The close button and Escape also collapse the panel. Switching views keeps both views mounted, preserving the query draft, answer, summary, and independent scroll positions. The mobile panel opens beside the persistent rail and closes when following a source into the conversation.
+The conversation header has separate `대화 정리` (summary, decisions, tasks) and `AI 검색` (question input, answers, evidence) buttons. Selecting an active header button closes the panel; the internal panel tabs switch views without closing. The close button and Escape also collapse the panel. Switching views keeps both views mounted, preserving query drafts, answers, summaries and independent scroll positions. The mobile panel overlays the conversation and closes when jumping to a source message. The desktop team sidebar displays members derived from actual conversation authors and the selected local name; it does not imply live presence.
 
 
 ## Persistent conversation document
 
-The `대화 정리` panel keeps its last saved result until the owner clicks `정리 생성` / `최신 대화 반영`. Pending chat is indicated without an API request. No-op refreshes do not call OpenAI. Document records are stored per room in browser localStorage (`nw-documents-v1`), alongside the existing browser-only chat records; this does not introduce cross-device synchronization.
+The `대화 정리` panel keeps its last saved result until the owner clicks `최신 대화 반영`. Pending chat is indicated without an API request. No-op refreshes do not call OpenAI. Document records are stored per room in browser localStorage (`nw-documents-v1`), alongside the existing browser-only chat records; this does not introduce cross-device synchronization.
 
 Each summary, decision, and task can be added, edited, or deleted through a save/cancel form. Tasks expose title, assignee, deadline, and the three original status values. User-edited notes are labeled and never modify the original chat. Subsequent explicit chat can supersede a manual edit, but older pending messages cannot silently undo a correction or restore a deleted item. Deleted-item records are retained for this purpose.
 
@@ -92,6 +92,12 @@ Decision cancellation removes the decision from the active list and archives it 
 
 Each summary, decision, task, history record, or search answer shows one evidence button with the deduplicated count instead of a separate link for every message. Manually edited items retain the `기존 근거` label. Evidence IDs are resolved against the original chat and ordered by message time, with original chat order breaking ties; missing references are skipped.
 
-Clicking evidence starts local in-chat navigation above the composer: previous, position/total, next, return, and close. Only the selected message is highlighted. Bounds do not wrap. Return restores the originating panel, scroll position, history expansion when applicable, and item; mobile navigation collapses the panel until return. Incoming chat does not auto-scroll away from evidence. Sending a new message exits navigation. Search references to manually entered notes remain separate from chat citations. Navigation makes no AI calls and changes no persisted data.
+Clicking evidence opens a source dialog with the original author, timestamp, complete message, previous/next controls and a jump-to-chat button. Task metadata appears only when a linked task exists. Jumping starts local in-chat navigation above the composer: previous, position/total, next, return, and close. Only the selected message is highlighted. Bounds do not wrap. Return restores the originating panel, scroll position, history expansion when applicable, and item; mobile navigation collapses the panel until return. Incoming chat does not auto-scroll away from evidence. Sending a new message exits navigation. Search references to manually entered notes remain separate from chat citations. Navigation makes no AI calls and changes no persisted data.
 
 Tasks use separate bordered white cards with a full wrapping title, status, labeled assignee/deadline metadata, and a compact evidence/edit footer.
+
+## Figma interface
+
+The interface adapts the supplied NeoWork Navy Brutalism prototype: a split name-entry screen, 72px application header, 208px team sidebar, flexible conversation and 432px assistant. The assistant contains summary, decision and compact task cards, an explicit refresh action, suggested search questions, distinct question/answer blocks and grouped evidence dialogs. Mobile layouts hide the team sidebar and present the assistant as a dismissible overlay. Existing messages, documents, editing, API routes and credential storage remain compatible. First-time visitors choose a local display name; saved names bypass entry.
+
+Figma vector downloads returned HTTP 403 in the implementation environment. Icons could not be copied verbatim; text controls and the existing close glyph are used. Font families are loaded through Google Fonts with Korean system fallbacks. The managed preview relay was unavailable, so browser layout/screenshot comparison remains unverified. Node regression checks and a temporary jsdom interaction harness cover entry, composing, panel state, manual edits, grouped evidence, jump/return and explicit AI request wiring; the harness uses mocked AI responses and no real keys.

@@ -31,8 +31,8 @@
 .summary-overview .summary-list li+li{border-top:1px solid var(--line);padding-top:16px}
 .summary-overview .summary-list li>p{font-size:16px;line-height:1.8}
 .summary-overview .empty-section{padding:0;border:0;background:none}
-.decision-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:stretch}
-.decision-list li{aspect-ratio:1;min-height:176px;padding:14px;background:#edf8ff;box-shadow:2px 2px 0 #dcecf6;border-radius:3px;display:flex;flex-direction:column;gap:16px;margin:0}
+.decision-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.decision-list li{aspect-ratio:auto;min-height:0;padding:14px;background:#edf8ff;box-shadow:2px 2px 0 #dcecf6;border-radius:3px;display:flex;flex-direction:column;gap:16px;margin:0}
 .decision-list li>p{font-size:16px;line-height:1.65;word-break:normal}
 .decision-list .note-actions{margin-top:auto;gap:8px;align-items:flex-start}
 .decision-list .source-link{white-space:normal}
@@ -50,7 +50,7 @@
 .participant-tasks .badge,.participant-tasks .task-meta-line,.participant-tasks .task-meta-line small{font-size:14px}
 .participant-tasks .task-actions{margin-top:8px}
 @container conversation-summary (min-width:580px){.decision-list{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@container conversation-summary (max-width:285px){.decision-list{grid-template-columns:minmax(0,1fr)}.decision-list li{aspect-ratio:auto;min-height:160px}}
+@container conversation-summary (max-width:285px){.decision-list{grid-template-columns:minmax(0,1fr)}.decision-list li{aspect-ratio:auto;min-height:0}}
 
 .summary-overview .summary-list li:before{display:none}.summary-overview .summary-list li>p{color:#405566}.summary-overview .summary-list li{margin:0}.decision-list li:before{display:none}.decision-list li{border:1px solid #c9e2f2}.decision-list li>p{color:#405566}.participant-heading h4{color:#405566}.participant-heading h4 span,.participant-heading>span{color:#8796a3}.participant-tasks .task-cards>.task-card{border:0;border-bottom:1px solid var(--line);border-radius:0;background:none;padding:16px 0}.participant-tasks .task-cards>.task-card:last-child{border-bottom:0}.participant-tasks .task-heading strong{color:#405566}
 

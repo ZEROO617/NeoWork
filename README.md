@@ -14,7 +14,7 @@ Existing browser-local conversations and documents are not uploaded, erased or m
 
 ## Conversation documents and AI
 
-The summary panel contains one darker blue-gray overview box, separate decision note cards, and assignee-grouped task cards with visible assignee, deadline, status, edit and evidence controls. Completion requires explicit evidence. Grouped evidence opens the original chat with previous/next navigation and return to the originating item. Direct user edits are attributed separately from chat facts.
+The summary panel contains one darker blue-gray overview box, separate decision cards that grow with their text, and assignee-grouped task cards with visible assignee, deadline, status, edit and evidence controls. Completion requires explicit evidence. Grouped evidence opens the original chat with previous/next navigation and return to the originating item. Direct user edits are attributed separately from chat facts.
 
 `최신 대화 반영` is explicit: no background AI calls occur on entry, polling, typing or panel switching. Shared summaries run on the server against stored room messages, not client-supplied context. New messages are processed in bounded batches; failures retain the last saved document. Concurrent summary generation obtains a database lease, and document updates use revision checks. A competing edit receives a conflict instead of overwriting the earlier save. All participants in a room can see the updated document and use manual editing.
 
@@ -65,3 +65,5 @@ Tests use actual D1 behavior through Miniflare, mocked provider responses and se
 - `scripts/dev.mjs`, `scripts/build.mjs`: local D1 preview and embedded Worker packaging.
 
 The original uploaded PRD supplied product context, not instructions to override the user's requested implementation.
+
+AI task assignees are validated as person names or nicknames rather than task labels. Explicit first-person assignment statements resolve to the cited sender; collective or ambiguous assignments remain unknown. Existing AI documents are normalized from their citation snapshots when read, without changing record IDs, revision numbers or manual entries. Corrections are persisted with the next ordinary document save. Decision cards retain the responsive column grid and use natural content height, without a square aspect ratio or minimum card height.

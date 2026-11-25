@@ -1,3 +1,4 @@
+import {repairTaskAssignees} from './assignees.js';
 import {sharedRequest,lobbyHTML} from './shared.js';
 import {rooms as initialRooms,messages as initialMessages,upgradeSampleMessages} from './data.js';
 import {search} from './analysis.js';
@@ -16,7 +17,7 @@ const list=()=>messages.filter(m=>m.room===room);
 const me=()=>user||'김민지';
 let openai=false,summaryBusy=false,summaryProgress='';
 let documents=saved('nw-documents-v1',{});if(!documents||typeof documents!=='object'||Array.isArray(documents))documents={};for(const [id,value] of Object.entries(documents))if(!validDocument(value))delete documents[id];
-const documentState=()=>documents[room]||emptyDocument();
+const documentState=()=>repairTaskAssignees(documents[room]||emptyDocument(),list());
 function saveDocument(value){const next={...documents,[room]:value};localStorage.setItem('nw-documents-v1',JSON.stringify(next));documents=next;}
 let sharedMode=false,showLobby=true,lobbyRooms=[],lobbyLoading=true,lobbyError='',lobbyNickname=localStorage.getItem('nw-nickname')||user,membershipId='',sharedMembers=[],roomRevision=0,roomCursor=0,syncBusy=false,sharedGeneration=0,activeRoom=null,sending=false,pendingSend=null;
 const roomDrafts=new Map();
@@ -39,7 +40,7 @@ function messageHTML(m){const own=sharedMode?m.memberId===membershipId:m.name===
 function itemTools(section,item){return `<div class="item-tools">${item.origin==='manual'?`<span class="manual-label">직접 수정 · ${esc(item.editedBy||'사용자')}</span>`:''}<button class="edit-item" data-edit-section="${section}" data-edit-id="${esc(item.id)}" ${summaryBusy?'disabled':''}>수정</button></div>`}
 function itemSources(item,originId=''){return evidenceButton(item.sources||[],item.origin==='manual'?'기존 근거':'근거',originId||'item-'+item.id)}
 function members(){return [...new Set([...list().map(m=>m.name),...(user?[user]:[])])]}
-function tasksHTML(tasks,editable=false,showAssignee=true){return tasks.length?`<div class="task-cards">${tasks.map(t=>`<article class="task-row task-card" id="${editable?'item-':'search-task-'}${esc(t.id||'')}"><div class="task-heading"><strong>${esc(t.title)}</strong>${badge(t.status)}</div><div class="task-meta-line">${showAssignee?`<span><small>담당자</small>${esc(t.name||'담당 미정')}</span>`:''}<span><small>기한</small>${esc(t.due)}</span></div><div class="task-actions">${itemSources(t,(editable?'item-':'search-task-')+(t.id||''))}${editable?itemTools('tasks',t):''}</div></article>`).join('')}</div>`:'<p class="empty-section">확인된 업무가 없습니다.</p>'}
+function tasksHTML(tasks,editable=false,showAssignee=true){return tasks.length?`<div class="task-cards">${tasks.map(t=>`<article class="task-row task-card" id="${editable?'item-':'search-task-'}${esc(t.id||'')}"><div class="task-heading"><strong>${esc(t.title)}</strong>${badge(t.status)}</div><div class="task-meta-line">${showAssignee?`<span><small>담당자</small>${esc(!t.name||t.name==='확인 불가'?'담당 미정':t.name)}</span>`:''}<span><small>기한</small>${esc(t.due)}</span></div><div class="task-actions">${itemSources(t,(editable?'item-':'search-task-')+(t.id||''))}${editable?itemTools('tasks',t):''}</div></article>`).join('')}</div>`:'<p class="empty-section">확인된 업무가 없습니다.</p>'}
 function participantTasksHTML(tasks){
  if(!tasks.length)return '<p class="empty-section">확인된 업무가 없습니다.</p>';
  const grouped=new Map();

@@ -1,3 +1,4 @@
+import {resolveTaskAssignee} from '../public/assignees.js';
 import {updateSchema,validatePrevious,cleanOperations,updateInstructions} from './updates.js';
 // OpenAI calls are server-only. No keys are included in the browser bundle.
 const string={type:'string'};
@@ -24,7 +25,7 @@ export function cleanResult(result,messages,kind){
     const refs=sources(t.sources);const texts=refs.map(id=>byId.get(id).text);
     // Explicit evidence is required even if the model claims completion.
     const explicit=texts.some(text=>/완료했|완료됐|완료되었|끝냈|마쳤/.test(text)&&!/미완료|아직|않았|않음|예정|완료.{0,3}(아니|안)|완료되면/.test(text));
-    return {title:t.title.slice(0,100),name:t.name.slice(0,20),due:t.due.slice(0,60),status:t.status==='완료'&&!explicit?'확인 불가':t.status,sources:refs};
+    return {title:t.title.slice(0,100),name:resolveTaskAssignee(t.name,refs,Object.fromEntries(byId)),due:t.due.slice(0,60),status:t.status==='완료'&&!explicit?'확인 불가':t.status,sources:refs};
   }).filter(t=>t.sources.length).slice(0,20);
   return {topics:notes(result.topics),decisions:notes(result.decisions),tasks};
 }

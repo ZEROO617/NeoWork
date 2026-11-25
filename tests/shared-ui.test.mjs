@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';import {Miniflare} from 'miniflare';import {readFile} from 'node:fs/promises';import {randomUUID} from 'node:crypto';
 import worker from '../dist/server/index.js';
 const base='https://neowork.example';
-const modules={};for(const key of ['data','analysis','evidence','document'])modules['./'+key+'.js']=await import('../public/'+key+'.js');
+const modules={};for(const key of ['data','analysis','evidence','document','assignees'])modules['./'+key+'.js']=await import('../public/'+key+'.js');
 const code=(await readFile('public/app.js','utf8')).replace(/^import \{(.+?)\} from '(.+?)';$/gm,(_,names,path)=>`const {${names.replace(/ as /g,':')}}=window.__modules[${JSON.stringify(path)}];`);
 const shared=await readFile('public/shared.js','utf8');const until=async f=>{for(let n=0;n<500;n++){if(f())return;await new Promise(r=>setTimeout(r,20))}throw Error('UI wait timed out')};
 test('two browser sessions select rooms, choose names, share chat and edit one shared task',async()=>{

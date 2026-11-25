@@ -1,3 +1,4 @@
+import {repairTaskAssignees} from '../public/assignees.js';
 import {analyze} from './ai.js';
 import {readKey} from './secrets.js';
 import {emptyDocument,manualChange,apiDocument,stageRefresh,isDirty} from '../public/document.js';
@@ -51,7 +52,7 @@ async function joined(db,room,s,nickname){
  try{if(existing)await db.prepare('UPDATE chat_members SET name=?,name_key=? WHERE id=?').bind(display,key,id).run();else await db.prepare('INSERT INTO chat_members(id,room_id,session_id,name,name_key,created_at) VALUES(?,?,?,?,?,?)').bind(id,room,s.id,display,key,Date.now()).run()}catch{throw fault('nickname_taken',409)}
  return {id,name:display};
 }
-async function documentRow(db,room){const row=await db.prepare('SELECT body,revision,lock_token,lock_until FROM chat_documents WHERE room_id=?').bind(room).first();if(!row)throw fault('room_not_found',404);return {...row,document:JSON.parse(row.body)}}
+async function documentRow(db,room){const row=await db.prepare('SELECT body,revision,lock_token,lock_until FROM chat_documents WHERE room_id=?').bind(room).first();if(!row)throw fault('room_not_found',404);return {...row,document:repairTaskAssignees(JSON.parse(row.body))}}
 async function allMessages(db,room){return (await db.prepare('SELECT * FROM chat_messages WHERE room_id=? ORDER BY seq').bind(room).all()).results.map(mapped)}
 async function storeDocument(db,room,doc,revision,token=null){
  const body=JSON.stringify(doc);if(new TextEncoder().encode(body).length>500000)throw fault('document_too_large',413);

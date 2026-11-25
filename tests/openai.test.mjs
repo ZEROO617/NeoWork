@@ -17,3 +17,6 @@ test('update ID constraints include active and deleted records but never message
  const fetcher=async(url,init)=>{const body=JSON.parse(init.body);assert.deepEqual(body.text.format.schema.properties.operations.items.properties.id.enum,['','note-1','deleted-1']);return Response.json({status:'completed',output:[{content:[{type:'output_text',text:'{"operations":[]}'}]}]})};
  await analyze({room:'project',messages,mode:'update',offset:0,previous},'summary','test-key','gpt-4.1-mini',fetcher);
 });
+test('explicit decision repair permits historical AI formatting without relaxing manual protection',async()=>{
+ await analyze({room:'project',messages,mode:'update',offset:0,restructureDecisions:true},'summary','test-key','gpt-4.1-mini',async(url,init)=>{const instructions=JSON.parse(init.body).instructions;assert.match(instructions,/DECISION FORMAT REPAIR/);assert.match(instructions,/exactly ONE independently actionable decision/);assert.match(instructions,/manualCursor protections/);return Response.json({status:'completed',output:[{content:[{type:'output_text',text:'{"operations":[]}'}]}]})});
+});

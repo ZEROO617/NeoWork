@@ -1,11 +1,12 @@
 // Persistent conversation document; independent of rendering and API calls.
 export const sections=['topics','decisions','tasks'];
-export const emptyDocument=()=>({version:1,topics:[],decisions:[],tasks:[],history:[],tombstones:[],evidence:{},processed:[],revision:0,syncedRevision:0,updatedAt:null});
+export const emptyDocument=()=>({version:1,decisionFormatVersion:1,topics:[],decisions:[],tasks:[],history:[],tombstones:[],evidence:{},processed:[],revision:0,syncedRevision:0,updatedAt:null});
 const clone=value=>JSON.parse(JSON.stringify(value));
 export const signature=m=>[m.id,m.text];
 export function validDocument(value){return !!value&&value.version===1&&[...sections,'history','tombstones','processed'].every(k=>Array.isArray(value[k]))&&value.evidence&&typeof value.evidence==='object'&&Number.isInteger(value.revision)&&Number.isInteger(value.syncedRevision)}
 export function pendingMessages(doc,messages){const first=messages.findIndex((m,i)=>doc.processed[i]?.[0]!==m.id||doc.processed[i]?.[1]!==m.text);return first<0?[]:messages.slice(first)}
-export const isDirty=(doc,messages)=>!doc.updatedAt||pendingMessages(doc,messages).length>0||doc.revision!==doc.syncedRevision;
+export const needsDecisionRestructure=doc=>doc.decisionFormatVersion!==1&&doc.decisions.some(item=>item.origin==='ai');
+export const isDirty=(doc,messages)=>!doc.updatedAt||pendingMessages(doc,messages).length>0||doc.revision!==doc.syncedRevision||needsDecisionRestructure(doc);
 export function manualChange(doc,section,id,fields,messages,author,remove=false){
  if(!sections.includes(section))throw Error('invalid_section');
  const next=clone(doc),index=next[section].findIndex(x=>x.id===id),old=next[section][index],now=new Date().toISOString();
@@ -52,7 +53,7 @@ export function requestBatches(messages,doc,room,user){
 }
 
 export async function stageRefresh(base,messages,room,user,request,onProgress=()=>{}){
- const cutoff=clone(messages);let staged=clone(base);if(!isDirty(staged,cutoff))return staged;let remaining=pendingMessages(staged,cutoff),first=true,processed=0;
- while(first||remaining.length){first=false;const batch=requestBatches(remaining,staged,room,user),offset=batch.length?cutoff.findIndex(m=>m.id===batch[0].id):cutoff.length;const result=await request({room,user,mode:'update',previous:apiDocument(staged),messages:batch,offset});if(!Array.isArray(result?.operations))throw Error('invalid_output');staged=applyOperations(staged,result.operations,batch,offset);processed+=batch.length;remaining=remaining.slice(batch.length);onProgress(processed);if(!batch.length)break;}
- staged.processed=cutoff.map(signature);staged.updatedAt=new Date().toISOString();staged.syncedRevision=staged.revision;return staged;
+ const cutoff=clone(messages);let staged=clone(base);if(!isDirty(staged,cutoff))return staged;const restructureDecisions=needsDecisionRestructure(staged);let remaining=restructureDecisions?cutoff:pendingMessages(staged,cutoff),first=true,processed=0;
+ while(first||remaining.length){first=false;const batch=requestBatches(remaining,staged,room,user),offset=batch.length?cutoff.findIndex(m=>m.id===batch[0].id):cutoff.length;const result=await request({room,user,mode:'update',previous:apiDocument(staged),messages:batch,offset,...(restructureDecisions?{restructureDecisions:true}:{})});if(!Array.isArray(result?.operations))throw Error('invalid_output');staged=applyOperations(staged,result.operations,batch,offset);processed+=batch.length;remaining=remaining.slice(batch.length);onProgress(processed);if(!batch.length)break;}
+ staged.processed=cutoff.map(signature);staged.updatedAt=new Date().toISOString();staged.syncedRevision=staged.revision;staged.decisionFormatVersion=1;return staged;
 }

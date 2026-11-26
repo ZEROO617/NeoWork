@@ -56,3 +56,17 @@ test('late join response includes the existing shared document and revision with
  const saved=await request('/api/rooms/'+room+'/document',{actor,method:'POST',data:{revision:0,section:'topics',fields:{text:'중간 참여자도 확인하는 기존 요약'}}});assert.equal(saved.status,200);
  const late=await request('/api/rooms/'+room+'/join',{actor:{},method:'POST',data:{nickname:'늦게 온 팀원'}});assert.equal(late.status,200);assert.equal(late.data.document.topics[0].text,'중간 참여자도 확인하는 기존 요약');assert.equal(late.data.revision,saved.data.revision);
 });
+
+test('password reset atomically removes only this room messages and documents, retaining memberships',async()=>{
+ const actor={};const created=await request('/api/rooms',{actor,method:'POST',data:{name:'초기화 검사',nickname:'초기화 담당'}});const room=created.data.room.id,env={ROOM_RESET_PASSWORD:'test-reset-pass'};
+ await request('/api/rooms/'+room+'/messages',{actor,method:'POST',data:{text:'지워질 대화',clientId:crypto.randomUUID()}});
+ await request('/api/rooms/'+room+'/document',{actor,method:'POST',data:{revision:0,section:'topics',fields:{text:'지워질 요약'}}});
+ const before=await db.prepare('SELECT COUNT(*) AS n FROM chat_messages WHERE room_id=?').bind('demo').first();
+ for(const text of ['/리셋 wrong','/리셋']){const invalid=await request('/api/rooms/'+room+'/messages',{actor,method:'POST',data:{text,clientId:crypto.randomUUID()},env});assert.equal(invalid.status,403)}
+ const unchanged=await request('/api/rooms/'+room+'/state',{actor});assert.equal(unchanged.data.messages.length,1);assert.equal(unchanged.data.document.topics.length,1);
+ const reset=await request('/api/rooms/'+room+'/messages',{actor,method:'POST',data:{text:'/리셋 test-reset-pass',clientId:crypto.randomUUID()},env});assert.equal(reset.status,200);assert.equal(reset.data.reset,true);assert.ok(reset.data.document.resetId);assert.equal(reset.data.revision,2);
+ const state=await request('/api/rooms/'+room+'/state?after='+unchanged.data.cursor,{actor});assert.deepEqual(state.data.messages,[]);for(const section of ['topics','decisions','tasks','history','tombstones','processed'])assert.deepEqual(state.data.document[section],[]);assert.deepEqual(state.data.document.evidence,{});assert.equal(state.data.member.id,created.data.member.id);
+ const other=await db.prepare('SELECT COUNT(*) AS n FROM chat_messages WHERE room_id=?').bind('demo').first();assert.equal(other.n,before.n);
+ const sent=await request('/api/rooms/'+room+'/messages',{actor,method:'POST',data:{text:'초기화 후 새 대화',clientId:crypto.randomUUID()}});assert.equal(sent.status,201);assert.ok(sent.data.message.seq>unchanged.data.cursor);
+ assert.equal((await request('/api/rooms/'+room+'/messages',{actor:{},method:'POST',data:{text:'/리셋 test-reset-pass',clientId:crypto.randomUUID()},env})).status,401);
+});

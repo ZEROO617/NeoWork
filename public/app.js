@@ -93,8 +93,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!dialog.open){if(ev
 render();document.querySelector('#content').scrollTop=1e9;
 async function sync(){
  if(!sharedMode||showLobby||syncBusy===sharedGeneration)return;const selectedRoom=room,generation=sharedGeneration;syncBusy=generation;
- try{let more=true;while(more){const data=await sharedRequest('/api/rooms/'+encodeURIComponent(selectedRoom)+'/state?after='+roomCursor);if(generation!==sharedGeneration||selectedRoom!==room)return;
+ try{let more=true;while(more){const data=await sharedRequest('/api/rooms/'+encodeURIComponent(selectedRoom)+'/state?after='+roomCursor);if(generation!==sharedGeneration||selectedRoom!==room||data.revision<roomRevision)return;
   const content=document.querySelector('#content'),pos=content.scrollTop,atEnd=content.scrollHeight-content.clientHeight-pos<50;
+  if((data.document?.resetId||null)!==(documents[room]?.resetId||null)){messages=[];answer=null;evidenceNavigation=null;pendingSend=null;toast('채팅방 내용이 초기화되었습니다.')}
   const byId=new Map(messages.map(m=>[m.id,m]));for(const message of data.messages)byId.set(message.id,message);messages=[...byId.values()].sort((a,b)=>a.seq-b.seq);roomCursor=data.cursor;sharedMembers=data.members;const names=new Map(sharedMembers.map(m=>[m.id,m.name]));messages=messages.map(m=>names.has(m.memberId)?{...m,name:names.get(m.memberId)}:m);activeRoom=data.room;rememberMember(data.member);acceptDocument(data);more=data.hasMore;
   preserveRender();document.querySelector('#content').scrollTop=atEnd&&!evidenceNavigation?1e9:pos;
  }}catch(error){if(generation===sharedGeneration)toast(error.message)}finally{if(syncBusy===generation)syncBusy=false}
@@ -148,7 +149,7 @@ async function copyRoomLink(){
 async function sendShared(){
  if(sending)return;const input=document.querySelector('#message'),text=input.value.trim(),selectedRoom=room,generation=sharedGeneration;if(!text)return;
  if(!pendingSend||pendingSend.room!==room||pendingSend.text!==text)pendingSend={room,text,clientId:crypto.randomUUID()};const request={text,clientId:pendingSend.clientId};sending=true;document.querySelector('.send-button').disabled=true;
- try{const data=await sharedRequest('/api/rooms/'+encodeURIComponent(room)+'/messages','POST',request);pendingSend=null;if(generation!==sharedGeneration)return;if(!messages.some(m=>m.id===data.message.id))messages.push(data.message);messages.sort((a,b)=>a.seq-b.seq);if(document.querySelector('#message').value.trim()===text)document.querySelector('#message').value='';evidenceNavigation=null;preserveRender();document.querySelector('#content').scrollTop=1e9;document.querySelector('#message').focus()}catch(error){if(selectedRoom===room)toast(error.message)}finally{sending=false;document.querySelector('.send-button').disabled=false}
+ try{const data=await sharedRequest('/api/rooms/'+encodeURIComponent(room)+'/messages','POST',request);pendingSend=null;if(generation!==sharedGeneration)return;if(data.reset){messages=[];roomCursor=0;answer=null;evidenceNavigation=null;acceptDocument(data);toast('채팅방의 대화와 정리를 초기화했습니다.')}else if(!messages.some(m=>m.id===data.message.id))messages.push(data.message);messages.sort((a,b)=>a.seq-b.seq);if(document.querySelector('#message').value.trim()===text)document.querySelector('#message').value='';evidenceNavigation=null;preserveRender();document.querySelector('#content').scrollTop=1e9;document.querySelector('#message').focus()}catch(error){if(/^\/리셋(?:\s|$)/u.test(text)){pendingSend=null;if(selectedRoom===room&&document.querySelector('#message').value.trim()===text)document.querySelector('#message').value=''}if(selectedRoom===room)toast(error.message)}finally{sending=false;document.querySelector('.send-button').disabled=false}
 }
 async function refreshSharedSummary(){
  if(summaryBusy)return;const selectedRoom=room,generation=sharedGeneration;summaryBusy=true;summaryProgress='팀 대화를 정리하는 중…';preserveRender();

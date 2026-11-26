@@ -80,3 +80,7 @@ Import this repository into Vercel using the Other framework preset. `vercel.jso
 The gateway permits only the chat API routes, validates same-origin JSON writes, bounds request sizes, and forwards only the anonymous chat session cookie. It does not forward browser identity or arbitrary authorization headers. The OpenAI credential stays on the existing backend. Owner settings redirect to the authenticated Sites settings page.
 
 Run `npm run build:vercel` and `npm test` before deploying. `.vercelignore` excludes local secrets and development state; `.gitignore` excludes both `.env.local` and generated Vercel output. Connect the GitHub repository to the Vercel project to enable deployments on future pushes.
+
+## Resetting a room
+
+Send `/리셋 <password>` in a shared room to delete that room's messages and all conversation document content, including evidence and edit history. Memberships, nicknames, room metadata, and other rooms remain intact. The backend checks the Sites-only secret `ROOM_RESET_PASSWORD`, limits attempts per session, and never stores the command as a message. Successful resets invalidate in-flight summary saves; a persistent reset ID clears cached messages and search answers on other clients at their next poll. State reads and reset writes use atomic D1 batches. Demo messages are not re-seeded after a reset.

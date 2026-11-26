@@ -99,12 +99,28 @@ export async function handleRooms(request,env){
   const member=await membership(request,db,room);
   if(action==='state'&&request.method==='GET'){
    const after=Number(url.searchParams.get('after')||0);if(!Number.isSafeInteger(after)||after<0)throw fault('invalid_cursor');
-   const rows=(await db.prepare(messageSelect+' WHERE x.room_id=? AND x.seq>? ORDER BY x.seq LIMIT 201').bind(room,after).all()).results,more=rows.length>200,messages=rows.slice(0,200).map(mapped);
-   const members=(await db.prepare('SELECT id,name FROM chat_members WHERE room_id=? ORDER BY created_at LIMIT 1000').bind(room).all()).results,doc=await documentRow(db,room);
+   const snapshot=await db.batch([
+    db.prepare(messageSelect+' WHERE x.room_id=? AND x.seq>? ORDER BY x.seq LIMIT 201').bind(room,after),
+    db.prepare('SELECT id,name FROM chat_members WHERE room_id=? ORDER BY created_at LIMIT 1000').bind(room),
+    db.prepare('SELECT body,revision,lock_until FROM chat_documents WHERE room_id=?').bind(room)
+   ]);
+   const rows=snapshot[0].results,more=rows.length>200,messages=rows.slice(0,200).map(mapped),members=snapshot[1].results,row=snapshot[2].results[0],doc={...row,document:repairTaskAssignees(JSON.parse(row.body))};
    return reply({room:{id:room,name:roomData.name,description:roomData.description,demo:!!roomData.demo},member:{id:member.id,name:member.name},members,messages,hasMore:more,cursor:messages.at(-1)?.seq||after,document:doc.document,revision:doc.revision,summaryBusy:doc.lock_until>Date.now()});
   }
   if(action==='messages'&&request.method==='POST'){
    const data=await readBody(request);if(typeof data.text!=='string'||!data.text.trim()||data.text.length>4000||typeof data.clientId!=='string'||!/^[a-f0-9-]{36}$/.test(data.clientId))throw fault('invalid_message');
+   if(/^\/리셋(?:\s|$)/u.test(data.text.trim())){
+    await throttle(db,'reset:'+member.sessionId,5,600000);
+    if(!env.ROOM_RESET_PASSWORD)throw fault('reset_not_configured',503);
+    const supplied=data.text.trim().match(/^\/리셋\s+(\S+)$/u)?.[1];
+    if(!supplied||await hash(supplied)!==await hash(env.ROOM_RESET_PASSWORD))throw fault('reset_password_invalid',403);
+    const document={...emptyDocument(),resetId:crypto.randomUUID()};
+    const results=await db.batch([
+     db.prepare('UPDATE chat_documents SET body=?,revision=revision+1,lock_token=NULL,lock_until=0 WHERE room_id=? RETURNING revision').bind(JSON.stringify(document),room),
+     db.prepare('DELETE FROM chat_messages WHERE room_id=?').bind(room)
+    ]);
+    return reply({reset:true,document,revision:results[0].results[0].revision});
+   }
    const prior=await db.prepare(messageSelect+' WHERE x.room_id=? AND x.member_id=? AND x.client_id=?').bind(room,member.id,data.clientId).first();if(prior)return reply({message:mapped(prior)});
    await throttle(db,'message:'+member.id,30);
    await db.prepare('INSERT OR IGNORE INTO chat_messages(id,room_id,member_id,client_id,name,body,time) VALUES(?,?,?,?,?,?,?)').bind(crypto.randomUUID(),room,member.id,data.clientId,member.name,data.text.trim(),new Date().toISOString()).run();

@@ -39,3 +39,20 @@ test('existing stored task-name assignees are corrected in state responses witho
  const body={version:1,decisionFormatVersion:1,topics:[],decisions:[],tasks:[{id:'bad-ai-owner',origin:'ai',title:'AI 개발',name:'AI 요약 및 검색 개발',due:'목요일',status:'진행 중',sources:[source.id]},{id:'manual-owner',origin:'manual',title:'직접 입력',name:'외부 담당자',due:'기한 미정',status:'진행 중',sources:[],manualCursor:0}],history:[],tombstones:[],evidence:{[source.id]:source},processed:[],revision:0,syncedRevision:0,updatedAt:null};
  await db.prepare('UPDATE chat_documents SET body=? WHERE room_id=?').bind(JSON.stringify(body),'demo').run();const state=await request('/api/rooms/demo/state',{actor});assert.equal(state.status,200);assert.equal(state.data.document.tasks[0].name,'김민지');assert.equal(state.data.document.tasks[1].name,'외부 담당자');assert.equal(state.data.document.tasks[0].id,'bad-ai-owner');
 });
+
+test('explicit rename updates all historical authors and rejoining preserves each room nickname',async()=>{
+ const actor={};const created=await request('/api/rooms',{actor,method:'POST',data:{name:'닉네임 회귀 검사',nickname:'이전 이름'}});const room=created.data.room.id;const id=created.data.member.id;
+ const message={text:'변경 전 메시지',clientId:crypto.randomUUID()};await request('/api/rooms/'+room+'/messages',{actor,method:'POST',data:message});
+ const other=await join(room,'다른 참여자');
+ const rename=await request('/api/rooms/'+room+'/join',{actor,method:'POST',data:{nickname:'새 이름',rename:true}});assert.equal(rename.data.member.id,id);
+ const state=await request('/api/rooms/'+room+'/state',{actor:other});assert.equal(state.data.messages[0].name,'새 이름');assert.equal(state.data.messages[0].memberId,id);
+ const retried=await request('/api/rooms/'+room+'/messages',{actor,method:'POST',data:message});assert.equal(retried.data.message.name,'새 이름');
+ await request('/api/rooms/team/join',{actor,method:'POST',data:{nickname:'다른 방 이름'}});
+ const rejoined=await request('/api/rooms/'+room+'/join',{actor,method:'POST',data:{nickname:'로비 이름'}});assert.equal(rejoined.data.member.name,'새 이름');
+ const collision=await request('/api/rooms/'+room+'/join',{actor,method:'POST',data:{nickname:'다른 참여자',rename:true}});assert.equal(collision.status,409);assert.equal((await request('/api/rooms/'+room+'/state',{actor})).data.member.name,'새 이름');
+});
+test('late join response includes the existing shared document and revision without AI calls',async()=>{
+ const actor={};const created=await request('/api/rooms',{actor,method:'POST',data:{name:'중간 참여 검사',nickname:'정리 작성자'}});const room=created.data.room.id;
+ const saved=await request('/api/rooms/'+room+'/document',{actor,method:'POST',data:{revision:0,section:'topics',fields:{text:'중간 참여자도 확인하는 기존 요약'}}});assert.equal(saved.status,200);
+ const late=await request('/api/rooms/'+room+'/join',{actor:{},method:'POST',data:{nickname:'늦게 온 팀원'}});assert.equal(late.status,200);assert.equal(late.data.document.topics[0].text,'중간 참여자도 확인하는 기존 요약');assert.equal(late.data.revision,saved.data.revision);
+});

@@ -44,16 +44,18 @@ async function session(request,db,create=false){
 }
 async function roomById(db,id){const room=await db.prepare('SELECT * FROM chat_rooms WHERE id=?').bind(id).first();if(!room)throw fault('room_not_found',404);return room}
 async function membership(request,db,room){const s=await session(request,db);const member=await db.prepare('SELECT id,name FROM chat_members WHERE room_id=? AND session_id=?').bind(room,s.id).first();if(!member)throw fault('join_required',401);return {...member,sessionId:s.id}}
-const mapped=row=>({id:row.id,room:row.room_id,name:row.name,text:row.body,time:row.time,memberId:row.member_id,seq:row.seq});
-async function joined(db,room,s,nickname){
- const display=name(nickname),key=display.toLocaleLowerCase('ko-KR');const existing=await db.prepare('SELECT id FROM chat_members WHERE room_id=? AND session_id=?').bind(room,s.id).first();
+const mapped=row=>({id:row.id,room:row.room_id,name:row.display_name??row.name,text:row.body,time:row.time,memberId:row.member_id,seq:row.seq});
+async function joined(db,room,s,nickname,rename=false){
+ const display=name(nickname),key=display.toLocaleLowerCase('ko-KR');const existing=await db.prepare('SELECT id,name FROM chat_members WHERE room_id=? AND session_id=?').bind(room,s.id).first();
+ if(existing&&!rename)return {id:existing.id,name:existing.name};
  const collision=await db.prepare('SELECT id,session_id FROM chat_members WHERE room_id=? AND name_key=?').bind(room,key).first();if(collision&&collision.session_id!==s.id)throw fault('nickname_taken',409);
  const id=existing?.id||crypto.randomUUID();
  try{if(existing)await db.prepare('UPDATE chat_members SET name=?,name_key=? WHERE id=?').bind(display,key,id).run();else await db.prepare('INSERT INTO chat_members(id,room_id,session_id,name,name_key,created_at) VALUES(?,?,?,?,?,?)').bind(id,room,s.id,display,key,Date.now()).run()}catch{throw fault('nickname_taken',409)}
  return {id,name:display};
 }
 async function documentRow(db,room){const row=await db.prepare('SELECT body,revision,lock_token,lock_until FROM chat_documents WHERE room_id=?').bind(room).first();if(!row)throw fault('room_not_found',404);return {...row,document:repairTaskAssignees(JSON.parse(row.body))}}
-async function allMessages(db,room){return (await db.prepare('SELECT * FROM chat_messages WHERE room_id=? ORDER BY seq').bind(room).all()).results.map(mapped)}
+const messageSelect='SELECT x.*, COALESCE((SELECT m.name FROM chat_members m WHERE m.id=x.member_id AND m.room_id=x.room_id),x.name) AS display_name FROM chat_messages x';
+async function allMessages(db,room){return (await db.prepare(messageSelect+' WHERE x.room_id=? ORDER BY x.seq').bind(room).all()).results.map(mapped)}
 async function storeDocument(db,room,doc,revision,token=null){
  const body=JSON.stringify(doc);if(new TextEncoder().encode(body).length>500000)throw fault('document_too_large',413);
  const result=token?await db.prepare('UPDATE chat_documents SET body=?,revision=revision+1,lock_token=NULL,lock_until=0 WHERE room_id=? AND revision=? AND lock_token=? RETURNING revision').bind(body,room,revision,token).first():await db.prepare('UPDATE chat_documents SET body=?,revision=revision+1 WHERE room_id=? AND revision=? AND lock_until<? RETURNING revision').bind(body,room,revision,Date.now()).first();
@@ -92,21 +94,21 @@ export async function handleRooms(request,env){
   }
   const match=path.match(/^\/api\/rooms\/([a-zA-Z0-9-]{1,100})\/(join|state|messages|document)$/);if(!match)return reply({error:'not_found'},404);const [,room,action]=match;const roomData=await roomById(db,room);
   if(action==='join'&&request.method==='POST'){
-   const data=await readBody(request),s=await session(request,db,true);await throttle(db,'join:'+s.id,20);const member=await joined(db,room,s,data.nickname);return reply({room:{id:room,name:roomData.name,description:roomData.description,demo:!!roomData.demo},member},200,s.cookie?{'Set-Cookie':s.cookie}:{});
+   const data=await readBody(request),s=await session(request,db,true);await throttle(db,'join:'+s.id,20);const member=await joined(db,room,s,data.nickname,data.rename===true),doc=await documentRow(db,room);return reply({room:{id:room,name:roomData.name,description:roomData.description,demo:!!roomData.demo},member,document:doc.document,revision:doc.revision},200,s.cookie?{'Set-Cookie':s.cookie}:{});
   }
   const member=await membership(request,db,room);
   if(action==='state'&&request.method==='GET'){
    const after=Number(url.searchParams.get('after')||0);if(!Number.isSafeInteger(after)||after<0)throw fault('invalid_cursor');
-   const rows=(await db.prepare('SELECT * FROM chat_messages WHERE room_id=? AND seq>? ORDER BY seq LIMIT 201').bind(room,after).all()).results,more=rows.length>200,messages=rows.slice(0,200).map(mapped);
+   const rows=(await db.prepare(messageSelect+' WHERE x.room_id=? AND x.seq>? ORDER BY x.seq LIMIT 201').bind(room,after).all()).results,more=rows.length>200,messages=rows.slice(0,200).map(mapped);
    const members=(await db.prepare('SELECT id,name FROM chat_members WHERE room_id=? ORDER BY created_at LIMIT 1000').bind(room).all()).results,doc=await documentRow(db,room);
    return reply({room:{id:room,name:roomData.name,description:roomData.description,demo:!!roomData.demo},member:{id:member.id,name:member.name},members,messages,hasMore:more,cursor:messages.at(-1)?.seq||after,document:doc.document,revision:doc.revision,summaryBusy:doc.lock_until>Date.now()});
   }
   if(action==='messages'&&request.method==='POST'){
    const data=await readBody(request);if(typeof data.text!=='string'||!data.text.trim()||data.text.length>4000||typeof data.clientId!=='string'||!/^[a-f0-9-]{36}$/.test(data.clientId))throw fault('invalid_message');
-   const prior=await db.prepare('SELECT * FROM chat_messages WHERE room_id=? AND member_id=? AND client_id=?').bind(room,member.id,data.clientId).first();if(prior)return reply({message:mapped(prior)});
+   const prior=await db.prepare(messageSelect+' WHERE x.room_id=? AND x.member_id=? AND x.client_id=?').bind(room,member.id,data.clientId).first();if(prior)return reply({message:mapped(prior)});
    await throttle(db,'message:'+member.id,30);
    await db.prepare('INSERT OR IGNORE INTO chat_messages(id,room_id,member_id,client_id,name,body,time) VALUES(?,?,?,?,?,?,?)').bind(crypto.randomUUID(),room,member.id,data.clientId,member.name,data.text.trim(),new Date().toISOString()).run();
-   const message=await db.prepare('SELECT * FROM chat_messages WHERE room_id=? AND member_id=? AND client_id=?').bind(room,member.id,data.clientId).first();return reply({message:mapped(message)},201);
+   const message=await db.prepare(messageSelect+' WHERE x.room_id=? AND x.member_id=? AND x.client_id=?').bind(room,member.id,data.clientId).first();return reply({message:mapped(message)},201);
   }
   if(action==='document'&&request.method==='POST'){
    const data=await readBody(request);await throttle(db,'document:'+member.id,30);if(!Number.isInteger(data.revision))throw fault('invalid_revision');const row=await documentRow(db,room);if(row.revision!==data.revision)throw fault('document_conflict',409);if(row.lock_until>Date.now())throw fault('summary_busy',423);

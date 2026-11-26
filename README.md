@@ -34,7 +34,7 @@ The API key remains server-side. `OPENAI_API_KEY` takes priority over the manual
 
 ## Development
 
-Requires Node.js 22.13 or newer (Node 24 recommended).
+Requires Node.js 22.13 or newer; Vercel uses Node.js 22.
 
 ```sh
 npm ci
@@ -67,3 +67,16 @@ Tests use actual D1 behavior through Miniflare, mocked provider responses and se
 The original uploaded PRD supplied product context, not instructions to override the user's requested implementation.
 
 AI task assignees are validated as person names or nicknames rather than task labels. Explicit first-person assignment statements resolve to the cited sender; collective or ambiguous assignments remain unknown. Existing AI documents are normalized from their citation snapshots when read, without changing record IDs, revision numbers or manual entries. Corrections are persisted with the next ordinary document save. Decision cards retain the responsive column grid and use natural content height, without a square aspect ratio or minimum card height.
+
+## Vercel hosting
+
+Vercel serves the frontend and a same-origin Node API gateway (`api/proxy.js`). The existing Sites Worker remains the authoritative chat/AI backend, retaining its Cloudflare D1 records and encrypted OpenAI key. Keep that backend published: this deployment does not migrate D1 or remove the Sites dependency. Browser sessions are separate between the two hostnames; rooms and messages are shared.
+
+Import this repository into Vercel using the Other framework preset. `vercel.json` sets `npm run build:vercel` and the `vercel-public` output directory. Set these server-only Vercel environment variables before deployment:
+
+- `NEOWORK_BACKEND_TOKEN`: the official Sites service-access bearer for this project. Store as a sensitive/encrypted variable; never prefix it with `NEXT_PUBLIC_` or put it in Git.
+- `NEOWORK_API_ORIGIN`: optional backend origin; defaults to the current published Sites URL.
+
+The gateway permits only the chat API routes, validates same-origin JSON writes, bounds request sizes, and forwards only the anonymous chat session cookie. It does not forward browser identity or arbitrary authorization headers. The OpenAI credential stays on the existing backend. Owner settings redirect to the authenticated Sites settings page.
+
+Run `npm run build:vercel` and `npm test` before deploying. `.vercelignore` excludes local secrets and development state; `.gitignore` excludes both `.env.local` and generated Vercel output. Connect the GitHub repository to the Vercel project to enable deployments on future pushes.

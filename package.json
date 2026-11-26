@@ -7,12 +7,16 @@
     "build": "node scripts/build.mjs",
     "test": "node --test tests/*.test.mjs",
     "dev": "node scripts/dev.mjs",
-    "db:generate": "drizzle-kit generate --config drizzle.config.mjs"
+    "db:generate": "drizzle-kit generate --config drizzle.config.mjs",
+    "build:vercel": "node scripts/build-vercel.mjs"
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.11",
     "drizzle-orm": "^0.45.4",
     "jsdom": "^31.0.1",
     "miniflare": "^4.20260730.0"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }

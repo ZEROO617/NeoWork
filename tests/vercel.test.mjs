@@ -37,3 +37,16 @@ test('gateway does not forward sign-in pages or transport errors',async()=>{
 test('gateway supports same-origin account endpoints and forwards login cookies without exposing service credentials',async()=>{
  let called=false;const res=await invoke({method:'POST',query:{route:'auth/login'},headers:{host:'neowork.vercel.app',origin:'https://neowork.vercel.app','content-type':'application/json'},body:{nickname:'tester',password:'test-password'}},async(url,options)=>{called=true;assert.equal(url,DEFAULT_BACKEND+'/api/auth/login');assert.equal(JSON.parse(options.body).nickname,'tester');return Response.json({account:{id:'account-id',name:'tester'}},{headers:{'set-cookie':`__Host-neowork=${guest}; Path=/; HttpOnly; Secure; SameSite=Lax`}})});assert.ok(called);assert.equal(res.statusCode,200);assert.ok(res.headers['Set-Cookie']);assert.ok(!JSON.stringify(res).includes(token));
 });
+test('gateway forwards binary uploads byte-for-byte with only allowed metadata and a size bound',async()=>{
+ const bytes=Buffer.from([0,128,255,10]);const res=await invoke({method:'POST',query:{route:'rooms/demo/files',filename:'자료.pdf',clientId:'test-id'},headers:{host:'neowork.vercel.app',origin:'https://neowork.vercel.app','content-type':'application/octet-stream'},body:bytes},async(url,options)=>{assert.equal(new URL(url).searchParams.get('filename'),'자료.pdf');assert.deepEqual(options.body,bytes);assert.equal(options.headers['Content-Type'],'application/octet-stream');return Response.json({message:{id:'file-message'}})});assert.equal(res.statusCode,200);
+ const tooLarge=await invoke({method:'POST',query:{route:'rooms/demo/files'},headers:{host:'neowork.vercel.app',origin:'https://neowork.vercel.app','content-type':'application/octet-stream'},body:Buffer.alloc(3*1024*1024+1)});assert.equal(tooLarge.statusCode,413);
+});
+test('gateway reads JSON streams when automatic body parsing is disabled',async()=>{
+ const chunks=[Buffer.from('{"nickname":"tester",'),Buffer.from('"password":"test-password"}')];const req={method:'POST',query:{route:'auth/login'},headers:{host:'neowork.vercel.app',origin:'https://neowork.vercel.app','content-type':'application/json'},async *[Symbol.asyncIterator](){yield* chunks}};
+ const res=response();await createGateway({NEOWORK_BACKEND_TOKEN:token},async(url,options)=>{assert.equal(JSON.parse(options.body).nickname,'tester');return Response.json({account:{name:'tester'}})})(req,res);assert.equal(res.statusCode,200);
+});
+test('gateway relays binary downloads only on authenticated file paths and forces attachment headers',async()=>{
+ const bytes=Buffer.from([0,255,128]),res={headers:{},setHeader(k,v){this.headers[k]=v},end(v){this.body=v}};
+ await createGateway({NEOWORK_BACKEND_TOKEN:token},async()=>new Response(bytes,{headers:{'content-type':'application/octet-stream','content-disposition':"attachment; filename*=UTF-8''test.bin"}}))({method:'GET',query:{route:'rooms/demo/files/'+'a'.repeat(36)},headers:{host:'neowork.vercel.app'}},res);
+ assert.equal(res.statusCode,200);assert.deepEqual(res.body,bytes);assert.equal(res.headers['X-Content-Type-Options'],'nosniff');assert.equal(res.headers['Cache-Control'],'private, no-store');
+});

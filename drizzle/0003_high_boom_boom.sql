@@ -1,0 +1,1 @@
+ALTER TABLE `chat_accounts` ADD `role` text DEFAULT 'user' NOT NULL;

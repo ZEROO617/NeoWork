@@ -8,7 +8,7 @@ Open the website and register with a unique nickname and a password of 8–128 c
 
 A stable, account-owned principal links room memberships across devices and login sessions, so logging out and signing in again preserves member IDs and own-message alignment. Credentials are never sent as chat messages. Passwords are salted independently and hashed with PBKDF2-SHA-256 (100,000 iterations); only hashes are stored. Random 256-bit login tokens live in a Secure, HttpOnly, SameSite=Lax cookie for 30 days; only their SHA-256 hashes are stored. Logout revokes the current login session without logging out other devices. Login, registration, and nickname changes have database-backed rate limits.
 
-Existing anonymous history can be linked during registration in the browser that still holds its original guest cookie. A nickname match alone never grants ownership of old messages. Anonymous membership nicknames remain reserved to avoid impersonating existing authors; register from the original browser to retain them. Existing message text and shared documents are preserved by the additive account-table migration. Password recovery is not implemented in this MVP.
+Existing anonymous history can be linked during registration in the browser that still holds its original guest cookie. A nickname match alone never grants ownership of old messages. Only registered accounts reserve a nickname. An anonymous nickname does not block registration; registering the same text from another browser creates a distinct account and never claims the old member ID. Use the original browser to link your own anonymous membership. Existing message text and shared documents are preserved by the additive account-table migration. Password recovery is not implemented in this MVP.
 
 Create a room with `새 채팅방`. Use `초대 링크` inside a room to copy its URL. The invited room appears first in the lobby. `채팅방 목록` returns to room selection. A browser can retain membership in several rooms, while its messages and drafts remain scoped to the selected room.
 
@@ -88,3 +88,17 @@ Run `npm run build:vercel` and `npm test` before deploying. `.vercelignore` excl
 ## Resetting a room
 
 Send `/리셋 <password>` in a shared room to delete that room's messages and all conversation document content, including evidence and edit history. Memberships, nicknames, room metadata, and other rooms remain intact. The backend checks the Sites-only secret `ROOM_RESET_PASSWORD`, limits attempts per session, and never stores the command as a message. Successful resets invalidate in-flight summary saves; a persistent reset ID clears cached messages and search answers on other clients at their next poll. State reads and reset writes use atomic D1 batches. Demo messages are not re-seeded after a reset.
+
+## Participants and attachments
+
+The room header's `참여자` button opens the registered membership list, with the current user marked `나`. This is a room roster, not a real-time presence list. It updates with the normal room polling while open. Deleted accounts are excluded.
+
+Use `첨부` beside the composer to upload a nonempty file up to 3 MiB. Attachments become regular shared messages with a filename, size, and authenticated download link; their bytes are stored in R2 under an `attachments/` prefix and metadata in `chat_files`. The existing encrypted-credential R2 binding is reused with a separate key namespace. Uploads are bounded on both servers, rate-limited, retriable with a client UUID, and limited to 500 files per room. Downloads require membership in the exact room and use an attachment disposition, octet-stream MIME type, no sniffing, sandbox headers, and no caching. Files are not rendered inline or sent to the AI; the filename alone appears in chat context.
+
+Room reset removes attachment metadata and revokes download access atomically with messages and documents, then deletes only the matching attachment objects. An in-flight upload cannot repopulate a reset room. Encrypted credential objects are never deleted by room resets.
+
+## Administration
+
+The reserved login name `admin` authenticates against the server-only Sites secret `ADMIN_PASSWORD`. Its first successful login creates the admin account; public registration cannot claim this name. Configure the password in Sites, not in source or frontend files. The admin dashboard defaults to accounts with unexpired login sessions and also offers all registered accounts, manual refresh, and a 15-second refresh when no dialog is open. An unexpired session indicates a maintained login, including a browser that has since closed; it is not proof that a user is online now. API authorization checks the stored account role on every request.
+
+Account deletion requires confirmation, revokes every login session, removes the account record, and releases its nickname. Historical membership IDs and messages remain with a ` (탈퇴)` author suffix; a new account reusing the nickname receives a different member ID. Administrators cannot delete themselves or another admin. The old anonymous anchor cookie is invalidated so it cannot reclaim the deleted identity.

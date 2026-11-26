@@ -15,6 +15,20 @@
       "when": 1795664681302,
       "tag": "0001_mighty_xavin",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1795665469579,
+      "tag": "0002_strange_mister_sinister",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1795665739913,
+      "tag": "0003_high_boom_boom",
+      "breakpoints": true
     }
   ]
 }

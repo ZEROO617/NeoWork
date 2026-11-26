@@ -1,17 +1,17 @@
 import test,{before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {Miniflare} from 'miniflare';
-import {readFile} from 'node:fs/promises';
+import {readFile,readdir} from 'node:fs/promises';
 import worker from '../dist/server/index.js';
 let mf,db;const base='https://neowork.example';
 const actors={};
-async function request(path,{actor,method='GET',data,origin=base,env={}}={}){const headers={};if(actor?.cookie)headers.Cookie=actor.cookie;if(method!=='GET'){headers.Origin=origin;headers['Content-Type']='application/json'}const response=await worker.fetch(new Request(base+path,{method,headers,...(data?{body:JSON.stringify(data)}:{})}),{DB:db,...env});const cookie=response.headers.get('set-cookie');if(actor&&cookie)actor.cookie=cookie.split(';')[0];return {status:response.status,data:await response.json(),cookie}}
+async function request(path,{actor,method='GET',data,origin=base,env={}}={}){if(actor&&!actor.cookie&&method==='POST'&&(path==='/api/rooms'||path.endsWith('/join'))){const registered=await request('/api/auth/register',{actor,method:'POST',data:{nickname:data.nickname,password:'test-password-123'},origin});if(registered.status!==201)return registered}const headers={};if(actor?.cookie)headers.Cookie=actor.cookie;if(method!=='GET'){headers.Origin=origin;headers['Content-Type']='application/json'}const response=await worker.fetch(new Request(base+path,{method,headers,...(data?{body:JSON.stringify(data)}:{})}),{DB:db,...env});const cookie=response.headers.get('set-cookie');if(actor&&cookie)actor.cookie=cookie.split(';')[0];return {status:response.status,data:await response.json(),cookie}}
 async function join(room,nickname){const actor={};const r=await request('/api/rooms/'+room+'/join',{actor,method:'POST',data:{nickname}});assert.equal(r.status,200);actor.id=r.data.member.id;return actor}
-before(async()=>{mf=new Miniflare({modules:true,script:'export default {fetch(){return new Response("test")}}',compatibilityDate:'2026-07-01',d1Databases:['DB']});db=await mf.getD1Database('DB');for(const sql of (await readFile('drizzle/0000_modern_sabra.sql','utf8')).split('--> statement-breakpoint').map(s=>s.trim()).filter(Boolean))await db.prepare(sql).run()});
+before(async()=>{mf=new Miniflare({modules:true,script:'export default {fetch(){return new Response("test")}}',compatibilityDate:'2026-07-01',d1Databases:['DB']});db=await mf.getD1Database('DB');for(const file of (await readdir('drizzle')).filter(x=>x.endsWith('.sql')).sort())for(const sql of (await readFile('drizzle/'+file,'utf8')).split('--> statement-breakpoint').map(s=>s.trim()).filter(Boolean))await db.prepare(sql).run()});
 after(async()=>{await mf?.dispose()});
 test('lobby lists isolated demo and empty team room, with a secure guest membership',async()=>{
- const lobby=await request('/api/rooms');assert.equal(lobby.status,200);assert.equal(lobby.data.rooms.find(r=>r.id==='demo').messageCount,10);assert.equal(lobby.data.rooms.find(r=>r.id==='team').messageCount,0);
- const actor={};const r=await request('/api/rooms/team/join',{actor,method:'POST',data:{nickname:'민지'}});assert.equal(r.status,200);assert.match(r.cookie,/HttpOnly; Secure; SameSite=Lax/);actors.a=actor;
+ const actor={};const registration=await request('/api/auth/register',{actor,method:'POST',data:{nickname:'민지',password:'test-password-123'}});assert.equal(registration.status,201);assert.match(registration.cookie,/HttpOnly; Secure; SameSite=Lax/);const lobby=await request('/api/rooms',{actor});assert.equal(lobby.status,200);assert.equal(lobby.data.rooms.find(r=>r.id==='demo').messageCount,10);assert.equal(lobby.data.rooms.find(r=>r.id==='team').messageCount,0);
+ const r=await request('/api/rooms/team/join',{actor,method:'POST',data:{nickname:'민지'}});assert.equal(r.status,200);actors.a=actor;
  actors.b=await join('team','준호');const state=await request('/api/rooms/team/state',{actor});assert.equal(state.data.messages.length,0);assert.equal(state.data.members.length,2);
 });
 test('two guests share messages, server owns identity and retries do not duplicate writes',async()=>{

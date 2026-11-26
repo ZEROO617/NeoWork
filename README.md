@@ -1,10 +1,14 @@
 # NeoWork
 
-A shared Korean team messenger with room selection, nickname entry, cited AI summaries and natural-language search. The UI retains the white/sky-blue messenger design, right-aligned own messages and independent collapsible summary/search panels.
+A shared Korean team messenger with nickname/password accounts, room selection, cited AI summaries and natural-language search. The UI retains the white/sky-blue messenger design, right-aligned own messages and independent collapsible summary/search panels.
 
 ## Joining and sharing
 
-Open the website, choose a nickname, and enter a room. The lobby includes an empty team room and a separate demo room containing sample discussion, three explicit decisions and task assignments. Anyone with the site URL can join an open room. Nicknames are unique within each room and can differ between rooms. Rejoining restores the server-stored nickname for that room; only the in-room profile editor renames an existing membership. Historical message authors display the current nickname associated with their stable member ID, including on already-open clients after polling. They are display names, not verified identities.
+Open the website and register with a unique nickname and a password of 8–128 characters, or log in to an existing account. The same account is used in every room. Nicknames are NFC-normalized and case-insensitive for uniqueness. Changing a nickname updates all memberships belonging to that account and the displayed author names of historical messages; another account's nickname cannot be claimed, even if that account has not joined a room. The lobby includes an empty team room and a separate demo room.
+
+A stable, account-owned principal links room memberships across devices and login sessions, so logging out and signing in again preserves member IDs and own-message alignment. Credentials are never sent as chat messages. Passwords are salted independently and hashed with PBKDF2-SHA-256 (100,000 iterations); only hashes are stored. Random 256-bit login tokens live in a Secure, HttpOnly, SameSite=Lax cookie for 30 days; only their SHA-256 hashes are stored. Logout revokes the current login session without logging out other devices. Login, registration, and nickname changes have database-backed rate limits.
+
+Existing anonymous history can be linked during registration in the browser that still holds its original guest cookie. A nickname match alone never grants ownership of old messages. Anonymous membership nicknames remain reserved to avoid impersonating existing authors; register from the original browser to retain them. Existing message text and shared documents are preserved by the additive account-table migration. Password recovery is not implemented in this MVP.
 
 Create a room with `새 채팅방`. Use `초대 링크` inside a room to copy its URL. The invited room appears first in the lobby. `채팅방 목록` returns to room selection. A browser can retain membership in several rooms, while its messages and drafts remain scoped to the selected room.
 
@@ -22,11 +26,11 @@ Independent decisions are separate records with their own citations. Existing co
 
 Shared search uses the latest 80 stored messages and the shared document, including cited history and clearly attributed manual notes. Unknown information is not invented. The configured provider is OpenAI Responses API, `gpt-4.1-mini` by default; `OPENAI_MODEL` can override it. Requests use structured output and `store: false`.
 
-## Storage and guest access
+## Storage and account access
 
 `.openai/hosting.json` declares the D1 binding `DB` and the existing encrypted-credential R2 binding `SECRETS_BUCKET`. Schema-only Drizzle migrations are in `drizzle/`; demo seeding is a separate bounded, idempotent server operation. The default rooms are `team` and `demo`.
 
-Guest room sessions use a random token in a Secure, HttpOnly, SameSite=Lax cookie lasting 30 days. Only its SHA-256 hash is stored. Membership checks protect room state and writes. Joining is open to anyone with a nickname, so this is an open-room service, not a confidential invitation-only workspace. The server validates same-origin JSON writes, nickname collisions, message lengths and room boundaries. Nickname identity is not account authentication.
+Account authentication and room membership checks protect room lists, messages, documents, and AI requests. Registered users can join open rooms; rooms are not invitation-only. The server validates same-origin JSON writes, globally unique nicknames, message lengths, and room boundaries. Chat member identity always comes from the authenticated account, never client-submitted author fields.
 
 Database-backed rate limits apply to joins, session creation, new rooms, messages, edits and AI requests. AI allows three calls per member per minute and 100 calls across the site per UTC day; current unchanged summaries do not consume a call. These MVP limits are defined in `worker/rooms.js`. Settings writes remain restricted to the site's authenticated owner, even while the chat service is public. Legacy AI endpoints for browser-local records are owner-only when the shared DB is enabled.
 
@@ -77,7 +81,7 @@ Import this repository into Vercel using the Other framework preset. `vercel.jso
 - `NEOWORK_BACKEND_TOKEN`: the official Sites service-access bearer for this project. Store as a sensitive/encrypted variable; never prefix it with `NEXT_PUBLIC_` or put it in Git.
 - `NEOWORK_API_ORIGIN`: optional backend origin; defaults to the current published Sites URL.
 
-The gateway permits only the chat API routes, validates same-origin JSON writes, bounds request sizes, and forwards only the anonymous chat session cookie. It does not forward browser identity or arbitrary authorization headers. The OpenAI credential stays on the existing backend. Owner settings redirect to the authenticated Sites settings page.
+The gateway permits only the account and chat API routes, validates same-origin JSON writes, bounds request sizes, and forwards only the application session cookie. It does not forward browser identity or arbitrary authorization headers. The OpenAI credential stays on the existing backend. Owner settings redirect to the authenticated Sites settings page.
 
 Run `npm run build:vercel` and `npm test` before deploying. `.vercelignore` excludes local secrets and development state; `.gitignore` excludes both `.env.local` and generated Vercel output. Connect the GitHub repository to the Vercel project to enable deployments on future pushes.
 

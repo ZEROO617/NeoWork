@@ -34,3 +34,6 @@ test('gateway does not forward sign-in pages or transport errors',async()=>{
  const res=await invoke({},fetcher);assert.equal(res.statusCode,502);assert.deepEqual(res.body,{error:'backend_unavailable'});
  }
 });
+test('gateway supports same-origin account endpoints and forwards login cookies without exposing service credentials',async()=>{
+ let called=false;const res=await invoke({method:'POST',query:{route:'auth/login'},headers:{host:'neowork.vercel.app',origin:'https://neowork.vercel.app','content-type':'application/json'},body:{nickname:'tester',password:'test-password'}},async(url,options)=>{called=true;assert.equal(url,DEFAULT_BACKEND+'/api/auth/login');assert.equal(JSON.parse(options.body).nickname,'tester');return Response.json({account:{id:'account-id',name:'tester'}},{headers:{'set-cookie':`__Host-neowork=${guest}; Path=/; HttpOnly; Secure; SameSite=Lax`}})});assert.ok(called);assert.equal(res.statusCode,200);assert.ok(res.headers['Set-Cookie']);assert.ok(!JSON.stringify(res).includes(token));
+});

@@ -2,7 +2,7 @@
 // data/AI service, preserving D1 data and server-only OpenAI credentials.
 export const DEFAULT_BACKEND='https://neowork-team-space.gthunder0601.chatgpt.site';
 const COOKIE='__Host-neowork';
-const allowed=/^(?:config|summary|ai|rooms(?:\/[a-zA-Z0-9-]{1,100}\/(?:join|state|messages|document))?)$/;
+const allowed=/^(?:auth\/(?:me|register|login|logout|rename)|config|summary|ai|rooms(?:\/[a-zA-Z0-9-]{1,100}\/(?:join|state|messages|document))?)$/;
 const json=(res,status,body)=>{res.statusCode=status;res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store');res.end(JSON.stringify(body))};
 export function createGateway(env=process.env,fetcher=fetch){return async function handler(req,res){
  const route=req.query?.route;

@@ -33,24 +33,81 @@ async function throttle(db,key,limit,period=60000){
  const row=await db.prepare('INSERT INTO chat_rate_limits(key,count,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1 WHERE count<? RETURNING count').bind(key+':'+bucket,expires,limit).first();
  if(!row)throw fault('rate_limited',429);
 }
-async function session(request,db,create=false){
- const token=request.headers.get('Cookie')?.split(';').map(x=>x.trim()).find(x=>x.startsWith(cookieName+'='))?.slice(cookieName.length+1);
- if(token&&/^[a-f0-9]{64}$/.test(token)){const row=await db.prepare('SELECT id FROM chat_sessions WHERE token_hash=? AND expires_at>?').bind(await hash(token),Date.now()).first();if(row)return {...row,cookie:null}}
- if(!create)throw fault('join_required',401);
- const ip=await hash(request.headers.get('CF-Connecting-IP')||'local');await throttle(db,'session:'+ip,20);
- const random=Array.from(crypto.getRandomValues(new Uint8Array(32))).map(x=>x.toString(16).padStart(2,'0')).join(''),id=crypto.randomUUID(),age=30*86400;
- await db.prepare('INSERT INTO chat_sessions(id,token_hash,expires_at) VALUES(?,?,?)').bind(id,await hash(random),Date.now()+age*1000).run();
- return {id,cookie:cookieName+'='+random+'; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age='+age};
+const tokenFrom=request=>request.headers.get('Cookie')?.split(';').map(x=>x.trim()).find(x=>x.startsWith(cookieName+'='))?.slice(cookieName.length+1);
+const randomHex=size=>Array.from(crypto.getRandomValues(new Uint8Array(size))).map(x=>x.toString(16).padStart(2,'0')).join('');
+const sessionCookie=token=>cookieName+'='+token+'; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000';
+const publicAccount=a=>({id:a.id,name:a.name});
+async function findAccount(request,db){
+ const token=tokenFrom(request);if(!token||!/^[a-f0-9]{64}$/.test(token))return null;
+ return db.prepare('SELECT a.id,a.name,a.session_id,s.id AS auth_session_id FROM chat_account_sessions s JOIN chat_accounts a ON a.id=s.account_id WHERE s.token_hash=? AND s.expires_at>?').bind(await hash(token),Date.now()).first();
+}
+async function session(request,db){const account=await findAccount(request,db);if(!account)throw fault('authentication_required',401);return {id:account.session_id,account,authSessionId:account.auth_session_id,cookie:null}}
+async function passwordHash(password,salt){
+ const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);
+ const bytes=await crypto.subtle.deriveBits({name:'PBKDF2',salt:Uint8Array.from(salt.match(/../g),x=>parseInt(x,16)),iterations:100000,hash:'SHA-256'},key,256);
+ return Array.from(new Uint8Array(bytes)).map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+function equalHash(a,b){let diff=a.length^b.length;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^(b.charCodeAt(i)||0);return diff===0}
+async function availableName(db,key,principal,accountId=''){
+ if(await db.prepare('SELECT id FROM chat_accounts WHERE name_key=? AND id<>?').bind(key,accountId).first())throw fault('nickname_taken',409);
+ if(await db.prepare('SELECT id FROM chat_members WHERE name_key=? AND session_id<>? LIMIT 1').bind(key,principal).first())throw fault('nickname_taken',409);
+}
+async function renameAccount(db,account,nickname){
+ const display=name(nickname),key=display.toLocaleLowerCase('ko-KR');await availableName(db,key,account.session_id,account.id);
+ try{await db.batch([
+  db.prepare('UPDATE chat_accounts SET name=?,name_key=? WHERE id=?').bind(display,key,account.id),
+  db.prepare('UPDATE chat_members SET name=?,name_key=? WHERE session_id=?').bind(display,key,account.session_id)
+ ])}catch(error){if(/unique|constraint/i.test(error.message))throw fault('nickname_taken',409);throw error}
+ return {...account,name:display};
+}
+async function handleAccount(request,db,action){
+ if(action==='me'&&request.method==='GET'){const account=await findAccount(request,db);return reply({account:account?publicAccount(account):null})}
+ if(request.method!=='POST')return reply({error:'method_not_allowed'},405);
+ const data=await readBody(request),ip=await hash(request.headers.get('CF-Connecting-IP')||'local');
+ if(action==='logout'){
+  const account=await findAccount(request,db);if(account)await db.prepare('DELETE FROM chat_account_sessions WHERE id=?').bind(account.auth_session_id).run();
+  return reply({ok:true},200,{'Set-Cookie':cookieName+'=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'});
+ }
+ if(action==='rename'){const s=await session(request,db);await throttle(db,'rename:'+s.account.id,10,600000);return reply({account:publicAccount(await renameAccount(db,s.account,data.nickname))})}
+ if(!['register','login'].includes(action))return reply({error:'not_found'},404);
+ await throttle(db,'auth-ip:'+ip,60,600000);
+ const display=name(data.nickname),key=display.toLocaleLowerCase('ko-KR');
+ if(typeof data.password!=='string'||data.password.length<8||data.password.length>128)throw fault(action==='login'?'invalid_credentials':'invalid_password',action==='login'?401:400);
+ await throttle(db,'auth-name:'+await hash(key),20,600000);
+ const token=randomHex(32),authId=crypto.randomUUID(),expires=Date.now()+30*86400000;
+ if(action==='login'){
+  const account=await db.prepare('SELECT * FROM chat_accounts WHERE name_key=?').bind(key).first();
+  const supplied=await passwordHash(data.password,account?.password_salt||'0'.repeat(32));
+  if(!account||!equalHash(supplied,account.password_hash))throw fault('invalid_credentials',401);
+  await db.prepare('INSERT INTO chat_account_sessions(id,account_id,token_hash,expires_at) VALUES(?,?,?,?)').bind(authId,account.id,await hash(token),expires).run();
+  return reply({account:publicAccount(account)},200,{'Set-Cookie':sessionCookie(token)});
+ }
+ if(await findAccount(request,db))throw fault('already_authenticated',409);
+ await throttle(db,'register-ip:'+ip,20,3600000);
+ // A browser's existing anonymous membership can be claimed only with its old
+ // unguessable cookie. Matching a nickname never claims another person's history.
+ const oldToken=tokenFrom(request);let legacy=null;
+ if(oldToken&&/^[a-f0-9]{64}$/.test(oldToken))legacy=await db.prepare('SELECT s.id FROM chat_sessions s WHERE s.token_hash=? AND s.expires_at>? AND NOT EXISTS (SELECT 1 FROM chat_accounts a WHERE a.session_id=s.id)').bind(await hash(oldToken),Date.now()).first();
+ const principal=legacy?.id||crypto.randomUUID(),id=crypto.randomUUID(),salt=randomHex(16);await availableName(db,key,principal);
+ const digest=await passwordHash(data.password,salt),statements=[];
+ if(!legacy)statements.push(db.prepare('INSERT INTO chat_sessions(id,token_hash,expires_at) VALUES(?,?,?)').bind(principal,await hash(randomHex(32)),expires));
+ statements.push(db.prepare('INSERT INTO chat_accounts(id,session_id,name,name_key,password_salt,password_hash,created_at) VALUES(?,?,?,?,?,?,?)').bind(id,principal,display,key,salt,digest,Date.now()),db.prepare('INSERT INTO chat_account_sessions(id,account_id,token_hash,expires_at) VALUES(?,?,?,?)').bind(authId,id,await hash(token),expires),db.prepare('UPDATE chat_members SET name=?,name_key=? WHERE session_id=?').bind(display,key,principal));
+ try{await db.batch(statements)}catch(error){if(/unique|constraint/i.test(error.message))throw fault('nickname_taken',409);throw error}
+ return reply({account:{id,name:display}},201,{'Set-Cookie':sessionCookie(token)});
 }
 async function roomById(db,id){const room=await db.prepare('SELECT * FROM chat_rooms WHERE id=?').bind(id).first();if(!room)throw fault('room_not_found',404);return room}
 async function membership(request,db,room){const s=await session(request,db);const member=await db.prepare('SELECT id,name FROM chat_members WHERE room_id=? AND session_id=?').bind(room,s.id).first();if(!member)throw fault('join_required',401);return {...member,sessionId:s.id}}
 const mapped=row=>({id:row.id,room:row.room_id,name:row.display_name??row.name,text:row.body,time:row.time,memberId:row.member_id,seq:row.seq});
 async function joined(db,room,s,nickname,rename=false){
- const display=name(nickname),key=display.toLocaleLowerCase('ko-KR');const existing=await db.prepare('SELECT id,name FROM chat_members WHERE room_id=? AND session_id=?').bind(room,s.id).first();
- if(existing&&!rename)return {id:existing.id,name:existing.name};
- const collision=await db.prepare('SELECT id,session_id FROM chat_members WHERE room_id=? AND name_key=?').bind(room,key).first();if(collision&&collision.session_id!==s.id)throw fault('nickname_taken',409);
- const id=existing?.id||crypto.randomUUID();
- try{if(existing)await db.prepare('UPDATE chat_members SET name=?,name_key=? WHERE id=?').bind(display,key,id).run();else await db.prepare('INSERT INTO chat_members(id,room_id,session_id,name,name_key,created_at) VALUES(?,?,?,?,?,?)').bind(id,room,s.id,display,key,Date.now()).run()}catch{throw fault('nickname_taken',409)}
+ const account=rename?await renameAccount(db,s.account,nickname):s.account;
+ const display=account.name,key=display.toLocaleLowerCase('ko-KR');
+ const existing=await db.prepare('SELECT id,name FROM chat_members WHERE room_id=? AND session_id=?').bind(room,s.id).first();
+ if(existing)return {id:existing.id,name:display};
+ const id=crypto.randomUUID();
+ try{await db.prepare('INSERT INTO chat_members(id,room_id,session_id,name,name_key,created_at) VALUES(?,?,?,?,?,?)').bind(id,room,s.id,display,key,Date.now()).run()}catch(error){
+  const concurrent=await db.prepare('SELECT id,name FROM chat_members WHERE room_id=? AND session_id=?').bind(room,s.id).first();if(concurrent)return concurrent;
+  if(/unique|constraint/i.test(error.message))throw fault('nickname_taken',409);throw error;
+ }
  return {id,name:display};
 }
 async function documentRow(db,room){const row=await db.prepare('SELECT body,revision,lock_token,lock_until FROM chat_documents WHERE room_id=?').bind(room).first();if(!row)throw fault('room_not_found',404);return {...row,document:repairTaskAssignees(JSON.parse(row.body))}}
@@ -77,10 +134,10 @@ async function sharedAI(request,env,data,kind){
  finally{await db.prepare('UPDATE chat_documents SET lock_token=NULL,lock_until=0 WHERE room_id=? AND lock_token=?').bind(room,token).run()}
 }
 export async function handleRooms(request,env){
- const url=new URL(request.url),path=url.pathname,ai=['/api/summary','/api/ai'].includes(path),route=path==='/api/rooms'||path.startsWith('/api/rooms/');
- if(!route&&!ai)return null;if(!env.DB)return route?reply({error:'shared_storage_unavailable'},503):null;
+ const url=new URL(request.url),path=url.pathname,auth=path.match(/^\/api\/auth\/(me|register|login|logout|rename)$/),ai=['/api/summary','/api/ai'].includes(path),route=path==='/api/rooms'||path.startsWith('/api/rooms/');
+ if(!route&&!ai&&!auth)return null;if(!env.DB)return route?reply({error:'shared_storage_unavailable'},503):null;
  try{
-  await initialize(env.DB);const db=env.DB;
+  await initialize(env.DB);const db=env.DB;if(auth)return await handleAccount(request,db,auth[1]);await session(request,db);
   if(ai){if(request.method!=='POST')return null;const data=await readBody(request.clone());const exists=typeof data.room==='string'&&await db.prepare('SELECT id FROM chat_rooms WHERE id=?').bind(data.room).first();if(!exists)return null;return await sharedAI(request,env,data,path==='/api/summary'?'summary':'search')}
   if(path==='/api/rooms'&&request.method==='GET'){
    const rows=(await db.prepare('SELECT r.*, (SELECT COUNT(*) FROM chat_members m WHERE m.room_id=r.id) AS member_count, (SELECT COUNT(*) FROM chat_messages x WHERE x.room_id=r.id) AS message_count FROM chat_rooms r ORDER BY r.demo DESC,r.created_at DESC LIMIT 100').all()).results;
@@ -88,7 +145,7 @@ export async function handleRooms(request,env){
    return reply({rooms:rows.map(r=>({id:r.id,name:r.name,description:r.description,demo:!!r.demo,memberCount:r.member_count,messageCount:r.message_count}))});
   }
   if(path==='/api/rooms'&&request.method==='POST'){
-   const data=await readBody(request),s=await session(request,db,true);await throttle(db,'create:'+s.id,5,3600000);await throttle(db,'create-ip:'+await hash(request.headers.get('CF-Connecting-IP')||'local'),10,3600000);const title=name(data.name,40),nickname=name(data.nickname),description=typeof data.description==='string'?data.description.trim().slice(0,160):'',id=crypto.randomUUID();
+   const data=await readBody(request),s=await session(request,db,true);await throttle(db,'create:'+s.id,5,3600000);await throttle(db,'create-ip:'+await hash(request.headers.get('CF-Connecting-IP')||'local'),10,3600000);const title=name(data.name,40),nickname=s.account.name,description=typeof data.description==='string'?data.description.trim().slice(0,160):'',id=crypto.randomUUID();
    await db.batch([db.prepare('INSERT INTO chat_rooms(id,name,description,demo,created_at) VALUES(?,?,?,0,?)').bind(id,title,description,Date.now()),db.prepare('INSERT INTO chat_documents(room_id,body,revision) VALUES(?,?,0)').bind(id,JSON.stringify(emptyDocument()))]);
    const member=await joined(db,id,s,nickname);return reply({room:{id,name:title,description,demo:false},member},201,s.cookie?{'Set-Cookie':s.cookie}:{});
   }
